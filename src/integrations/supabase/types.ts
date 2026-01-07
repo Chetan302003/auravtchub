@@ -188,6 +188,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      delete_old_system_logs: { Args: never; Returns: undefined }
       get_fleet_stats: { Args: never; Returns: Json }
       get_leaderboard: {
         Args: { limit_count?: number }
