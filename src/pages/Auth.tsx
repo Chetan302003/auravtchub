@@ -128,7 +128,7 @@ export default function Auth() {
             <Truck className="w-10 h-10 text-primary" />
           </div>
           {/* ===== END LOGO PLACEHOLDER ===== */}
-          <h1 className="text-3xl font-bold gradient-text neon-text">Aura VTC Hub</h1>
+          <h1 className="text-3xl font-bold text-white tracking-wide">AURA VTC HUB</h1>
           <p className="text-muted-foreground mt-2">Fleet Management System</p>
         </div>
 
