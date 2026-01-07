@@ -117,11 +117,17 @@ export default function Auth() {
       </div>
 
       <div className="w-full max-w-md relative z-10">
-        {/* Logo */}
+        {/* Logo - Replace with your Aura logo */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary/20 mb-4 neon-pulse">
-            <Truck className="w-8 h-8 text-primary" />
+          {/* ===== AURA LOGO PLACEHOLDER ===== */}
+          {/* Replace this div with your custom logo:
+              <img src="/path-to-aura-logo.png" alt="Aura VTC" className="w-20 h-20 mx-auto mb-4" />
+          */}
+          <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-primary/20 mb-4 neon-pulse">
+            {/* Replace Truck icon with Aura logo image */}
+            <Truck className="w-10 h-10 text-primary" />
           </div>
+          {/* ===== END LOGO PLACEHOLDER ===== */}
           <h1 className="text-3xl font-bold gradient-text neon-text">Aura VTC Hub</h1>
           <p className="text-muted-foreground mt-2">Fleet Management System</p>
         </div>

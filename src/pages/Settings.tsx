@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
+import { useBrightness } from '@/hooks/useBrightness';
 import { supabase } from '@/integrations/supabase/client';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { GlassCard } from '@/components/layout/GlassCard';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Slider } from '@/components/ui/slider';
 import { useToast } from '@/hooks/use-toast';
 import { 
   User, 
@@ -14,11 +16,15 @@ import {
   Save,
   Loader2,
   Shield,
-  Key
+  Key,
+  Sun,
+  Moon,
+  RotateCcw
 } from 'lucide-react';
 
 export default function Settings() {
   const { user, profile, roles } = useAuth();
+  const { brightness, setBrightness, resetBrightness, MIN_BRIGHTNESS, MAX_BRIGHTNESS } = useBrightness();
   const [loading, setLoading] = useState(false);
   const [tmpId, setTmpId] = useState(profile?.tmp_id || '');
   const { toast } = useToast();
@@ -168,6 +174,51 @@ export default function Settings() {
                     })
                   : '—'}
               </span>
+            </div>
+          </div>
+        </GlassCard>
+
+        {/* Display Settings */}
+        <GlassCard>
+          <h3 className="text-lg font-semibold mb-6 flex items-center gap-2">
+            <Sun size={20} className="text-primary" />
+            Display Settings
+          </h3>
+
+          <div className="space-y-6">
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <Label className="flex items-center gap-2">
+                  <Moon size={16} className="text-muted-foreground" />
+                  Brightness
+                  <Sun size={16} className="text-muted-foreground" />
+                </Label>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-muted-foreground w-12 text-right">
+                    {Math.round(brightness * 100)}%
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={resetBrightness}
+                    className="h-8 w-8 p-0"
+                    title="Reset to default"
+                  >
+                    <RotateCcw size={14} />
+                  </Button>
+                </div>
+              </div>
+              <Slider
+                value={[brightness]}
+                onValueChange={([value]) => setBrightness(value)}
+                min={MIN_BRIGHTNESS}
+                max={MAX_BRIGHTNESS}
+                step={0.05}
+                className="w-full"
+              />
+              <p className="text-xs text-muted-foreground">
+                Adjust the overall brightness of the interface
+              </p>
             </div>
           </div>
         </GlassCard>
