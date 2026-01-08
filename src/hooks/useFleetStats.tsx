@@ -138,3 +138,84 @@ export function usePersonalStats(userId: string | undefined) {
 
   return { stats, recentJobs, loading };
 }
+
+// Hook for fetching weekly data from actual job logs
+export function useWeeklyData() {
+  const [weeklyData, setWeeklyData] = useState<{ day: string; distance: number; income: number }[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchWeeklyData = async () => {
+      setLoading(true);
+      try {
+        const today = new Date();
+        const sevenDaysAgo = new Date(today);
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
+
+        const { data: jobs, error } = await supabase
+          .from('job_logs')
+          .select('delivery_date, distance_km, income')
+          .gte('delivery_date', sevenDaysAgo.toISOString())
+          .order('delivery_date', { ascending: true });
+
+        if (error) throw error;
+
+        // Group by day
+        const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        const dailyData: Record<string, { distance: number; income: number }> = {};
+
+        // Initialize all 7 days
+        for (let i = 0; i < 7; i++) {
+          const date = new Date(sevenDaysAgo);
+          date.setDate(date.getDate() + i);
+          const dayName = dayNames[date.getDay()];
+          dailyData[dayName] = { distance: 0, income: 0 };
+        }
+
+        // Aggregate job data
+        (jobs || []).forEach((job) => {
+          if (job.delivery_date) {
+            const date = new Date(job.delivery_date);
+            const dayName = dayNames[date.getDay()];
+            if (dailyData[dayName]) {
+              dailyData[dayName].distance += Number(job.distance_km || 0);
+              dailyData[dayName].income += Number(job.income || 0);
+            }
+          }
+        });
+
+        // Convert to array in order
+        const orderedData = [];
+        for (let i = 0; i < 7; i++) {
+          const date = new Date(sevenDaysAgo);
+          date.setDate(date.getDate() + i);
+          const dayName = dayNames[date.getDay()];
+          orderedData.push({
+            day: dayName,
+            ...dailyData[dayName],
+          });
+        }
+
+        setWeeklyData(orderedData);
+      } catch (err) {
+        console.error('Error fetching weekly data:', err);
+        // Return empty data
+        setWeeklyData([
+          { day: 'Mon', distance: 0, income: 0 },
+          { day: 'Tue', distance: 0, income: 0 },
+          { day: 'Wed', distance: 0, income: 0 },
+          { day: 'Thu', distance: 0, income: 0 },
+          { day: 'Fri', distance: 0, income: 0 },
+          { day: 'Sat', distance: 0, income: 0 },
+          { day: 'Sun', distance: 0, income: 0 },
+        ]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchWeeklyData();
+  }, []);
+
+  return { weeklyData, loading };
+}

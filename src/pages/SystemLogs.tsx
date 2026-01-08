@@ -15,15 +15,16 @@ import {
   FileText, 
   Search, 
   RefreshCw,
-  User,
-  Shield,
   UserCheck,
   UserX,
+  Shield,
   Edit,
   Trash,
-  Loader2
+  Loader2,
+  Rocket,
+  Megaphone
 } from 'lucide-react';
-import { format } from 'date-fns';
+import { format, formatDistanceToNow } from 'date-fns';
 
 interface SystemLog {
   id: string;
@@ -40,7 +41,13 @@ const ACTION_ICONS: Record<string, any> = {
   user_approved: UserCheck,
   user_rejected: UserX,
   role_changed: Shield,
-  profile_updated: Edit,
+  hr_update_profile: Edit,
+  hr_update_password: Shield,
+  hr_update_email: Edit,
+  hr_set_roles: Shield,
+  hr_delete_user: Trash,
+  version_pushed: Rocket,
+  announcement_created: Megaphone,
   data_deleted: Trash,
   default: FileText,
 };
@@ -49,7 +56,13 @@ const ACTION_COLORS: Record<string, string> = {
   user_approved: 'text-primary bg-primary/20',
   user_rejected: 'text-destructive bg-destructive/20',
   role_changed: 'text-warning bg-warning/20',
-  profile_updated: 'text-blue-500 bg-blue-500/20',
+  hr_update_profile: 'text-blue-500 bg-blue-500/20',
+  hr_update_password: 'text-purple-500 bg-purple-500/20',
+  hr_update_email: 'text-cyan-500 bg-cyan-500/20',
+  hr_set_roles: 'text-amber-500 bg-amber-500/20',
+  hr_delete_user: 'text-destructive bg-destructive/20',
+  version_pushed: 'text-primary bg-primary/20',
+  announcement_created: 'text-primary bg-primary/20',
   data_deleted: 'text-destructive bg-destructive/20',
   default: 'text-muted-foreground bg-muted/20',
 };
@@ -87,7 +100,7 @@ export default function SystemLogs() {
 
       const logsWithNames = (data || []).map(log => ({
         ...log,
-        actor_username: userMap.get(log.actor_id) || 'Unknown',
+        actor_username: userMap.get(log.actor_id) || 'System',
         target_username: log.target_user_id ? userMap.get(log.target_user_id) || 'Unknown' : null,
       }));
 
@@ -118,6 +131,26 @@ export default function SystemLogs() {
     return type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
   };
 
+  const formatDetails = (details: any) => {
+    if (!details) return null;
+    
+    // Format specific details more readably
+    const formatted: string[] = [];
+    
+    if (details.new_role) formatted.push(`New role: ${details.new_role}`);
+    if (details.roles) formatted.push(`Roles: ${details.roles.join(', ')}`);
+    if (details.action) formatted.push(`Action: ${details.action}`);
+    if (details.new_version) formatted.push(`Version: ${details.new_version}`);
+    if (details.title) formatted.push(`Title: ${details.title}`);
+    if (details.priority) formatted.push(`Priority: ${details.priority}`);
+    
+    if (formatted.length === 0) {
+      return JSON.stringify(details);
+    }
+    
+    return formatted.join(' • ');
+  };
+
   return (
     <AppLayout>
       <div className="space-y-8">
@@ -125,7 +158,7 @@ export default function SystemLogs() {
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
             <h1 className="text-3xl font-bold gradient-text">System Logs</h1>
-            <p className="text-muted-foreground mt-1">Audit trail of all system actions</p>
+            <p className="text-muted-foreground mt-1">Audit trail of all system actions (auto-deleted after 2 days)</p>
           </div>
           <Button onClick={fetchLogs} variant="outline" className="rounded-full gap-2">
             <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
@@ -181,7 +214,7 @@ export default function SystemLogs() {
                 return (
                   <div key={log.id} className="p-4 hover:bg-muted/10 transition-colors">
                     <div className="flex items-start gap-4">
-                      <div className={`p-2 rounded-lg ${colorClass}`}>
+                      <div className={`p-2 rounded-lg shrink-0 ${colorClass}`}>
                         <Icon size={20} />
                       </div>
                       <div className="flex-1 min-w-0">
@@ -200,11 +233,11 @@ export default function SystemLogs() {
                         </div>
                         {log.details && (
                           <p className="text-sm text-muted-foreground mt-1">
-                            {JSON.stringify(log.details)}
+                            {formatDetails(log.details)}
                           </p>
                         )}
                         <p className="text-xs text-muted-foreground mt-2">
-                          {format(new Date(log.created_at), 'MMM dd, yyyy HH:mm:ss')}
+                          {formatDistanceToNow(new Date(log.created_at), { addSuffix: true })} • {format(new Date(log.created_at), 'MMM dd, yyyy HH:mm:ss')}
                         </p>
                       </div>
                     </div>

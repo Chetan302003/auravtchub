@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
+import { useTruckersMP, TMPEvent, TMPServer } from '@/hooks/useTruckersMP';
 import { supabase } from '@/integrations/supabase/client';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { GlassCard, StatCard } from '@/components/layout/GlassCard';
@@ -9,7 +10,6 @@ import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { 
   Code, 
-  Download, 
   Upload,
   Server,
   Database,
@@ -18,8 +18,17 @@ import {
   CheckCircle,
   AlertTriangle,
   Loader2,
-  Rocket
+  Rocket,
+  Globe,
+  Wifi,
+  WifiOff,
+  Calendar,
+  MapPin,
+  RefreshCw,
+  Trash2,
+  Clock
 } from 'lucide-react';
+import { format } from 'date-fns';
 
 interface AppVersion {
   current: string;
@@ -36,7 +45,17 @@ export default function DeveloperPanel() {
     totalJobs: 0,
     totalLogs: 0,
   });
+  const [systemHealth, setSystemHealth] = useState({
+    database: { status: 'checking', latency: 0 },
+    auth: { status: 'checking' },
+    edgeFunctions: { status: 'checking' },
+  });
+  const [tmpEvents, setTmpEvents] = useState<TMPEvent[]>([]);
+  const [tmpServers, setTmpServers] = useState<TMPServer[]>([]);
+  const [tmpLoading, setTmpLoading] = useState(false);
+  
   const { user, hasRole } = useAuth();
+  const { getEvents, getServers } = useTruckersMP();
   const { toast } = useToast();
 
   const isDeveloper = hasRole('developer');
@@ -44,7 +63,6 @@ export default function DeveloperPanel() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      // Fetch version
       const { data: versionData } = await supabase
         .from('app_settings')
         .select('value')
@@ -55,7 +73,6 @@ export default function DeveloperPanel() {
         setVersion(versionData.value as unknown as AppVersion);
       }
 
-      // Fetch stats
       const [
         { count: totalUsers },
         { count: pendingUsers },
@@ -81,9 +98,63 @@ export default function DeveloperPanel() {
     }
   };
 
+  const checkSystemHealth = async () => {
+    // Check database
+    const dbStart = Date.now();
+    try {
+      await supabase.from('profiles').select('id').limit(1);
+      setSystemHealth(prev => ({
+        ...prev,
+        database: { status: 'connected', latency: Date.now() - dbStart }
+      }));
+    } catch {
+      setSystemHealth(prev => ({ ...prev, database: { status: 'error', latency: 0 } }));
+    }
+
+    // Check auth
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      setSystemHealth(prev => ({
+        ...prev,
+        auth: { status: session ? 'active' : 'no_session' }
+      }));
+    } catch {
+      setSystemHealth(prev => ({ ...prev, auth: { status: 'error' } }));
+    }
+
+    // Check edge functions
+    try {
+      const { data, error } = await supabase.functions.invoke('tmp-servers', {});
+      setSystemHealth(prev => ({
+        ...prev,
+        edgeFunctions: { status: error ? 'error' : 'ready' }
+      }));
+    } catch {
+      setSystemHealth(prev => ({ ...prev, edgeFunctions: { status: 'error' } }));
+    }
+  };
+
+  const fetchTMPData = async () => {
+    setTmpLoading(true);
+    try {
+      const [events, servers] = await Promise.all([
+        getEvents(),
+        getServers(),
+      ]);
+      setTmpEvents(events);
+      setTmpServers(servers);
+      toast({ title: 'TMP Data Loaded', description: `${events.length} events, ${servers.length} servers` });
+    } catch (error) {
+      toast({ variant: 'destructive', title: 'Error', description: 'Failed to fetch TruckersMP data' });
+    } finally {
+      setTmpLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (isDeveloper) {
       fetchData();
+      checkSystemHealth();
     }
   }, [isDeveloper]);
 
@@ -99,15 +170,32 @@ export default function DeveloperPanel() {
 
     setLoading(true);
     try {
-      const { error } = await supabase
+      // Check if version record exists
+      const { data: existing } = await supabase
         .from('app_settings')
-        .update({ 
-          value: { current: version?.current, latest: newVersion },
-          updated_by: user?.id,
-        })
-        .eq('key', 'version');
+        .select('id')
+        .eq('key', 'version')
+        .single();
 
-      if (error) throw error;
+      if (existing) {
+        const { error } = await supabase
+          .from('app_settings')
+          .update({ 
+            value: { current: version?.current || '1.0.0', latest: newVersion },
+            updated_by: user?.id,
+          })
+          .eq('key', 'version');
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from('app_settings')
+          .insert({ 
+            key: 'version',
+            value: { current: '1.0.0', latest: newVersion },
+            updated_by: user?.id,
+          });
+        if (error) throw error;
+      }
 
       await supabase.from('system_logs').insert({
         actor_id: user?.id,
@@ -117,10 +205,10 @@ export default function DeveloperPanel() {
 
       toast({
         title: 'Update Pushed!',
-        description: `Version ${newVersion} is now available.`,
+        description: `Version ${newVersion} is now available. Users will be notified on login.`,
       });
 
-      setVersion(prev => prev ? { ...prev, latest: newVersion } : null);
+      setVersion(prev => prev ? { ...prev, latest: newVersion } : { current: '1.0.0', latest: newVersion });
       setNewVersion('');
     } catch (error: any) {
       toast({
@@ -128,6 +216,21 @@ export default function DeveloperPanel() {
         title: 'Error',
         description: error.message,
       });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteOldLogs = async () => {
+    setLoading(true);
+    try {
+      const { error } = await supabase.rpc('delete_old_system_logs');
+      if (error) throw error;
+      
+      toast({ title: 'Logs Cleaned', description: 'Old system logs have been deleted.' });
+      fetchData();
+    } catch (error: any) {
+      toast({ variant: 'destructive', title: 'Error', description: error.message });
     } finally {
       setLoading(false);
     }
@@ -149,16 +252,19 @@ export default function DeveloperPanel() {
     );
   }
 
+  const onlineServers = tmpServers.filter(s => s.online);
+  const totalPlayers = tmpServers.reduce((sum, s) => sum + s.players, 0);
+
   return (
     <AppLayout>
       <div className="space-y-8">
         {/* Header */}
         <div>
           <h1 className="text-3xl font-bold gradient-text">Developer Panel</h1>
-          <p className="text-muted-foreground mt-1">System management and updates</p>
+          <p className="text-muted-foreground mt-1">System management, updates, and monitoring</p>
         </div>
 
-        {/* Version Info */}
+        {/* Version Control */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <GlassCard>
             <div className="flex items-center gap-4 mb-6">
@@ -197,7 +303,7 @@ export default function DeveloperPanel() {
               </div>
               <div>
                 <h3 className="text-lg font-semibold">Push Update</h3>
-                <p className="text-sm text-muted-foreground">Release new version</p>
+                <p className="text-sm text-muted-foreground">Release new version to all users</p>
               </div>
             </div>
 
@@ -211,6 +317,9 @@ export default function DeveloperPanel() {
                   onChange={(e) => setNewVersion(e.target.value)}
                   className="glass-input font-mono"
                 />
+                <p className="text-xs text-muted-foreground">
+                  Format: X.Y.Z (semantic versioning). Users will see update notification on next login.
+                </p>
               </div>
               <Button
                 onClick={handlePushUpdate}
@@ -249,52 +358,189 @@ export default function DeveloperPanel() {
             title="System Logs"
             value={stats.totalLogs}
             icon={<Activity size={24} />}
+            subtitle={
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                onClick={handleDeleteOldLogs}
+                className="text-xs p-0 h-auto text-muted-foreground hover:text-destructive"
+              >
+                <Trash2 size={12} className="mr-1" /> Clean old logs
+              </Button>
+            }
           />
         </div>
 
         {/* System Health */}
         <GlassCard>
-          <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-            <Server size={20} className="text-primary" />
-            System Health
-          </h3>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold flex items-center gap-2">
+              <Server size={20} className="text-primary" />
+              System Health
+            </h3>
+            <Button variant="ghost" size="sm" onClick={checkSystemHealth}>
+              <RefreshCw size={16} className="mr-2" />
+              Refresh
+            </Button>
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="flex items-center gap-3 p-4 rounded-xl bg-muted/30">
-              <CheckCircle className="text-primary" size={24} />
+              {systemHealth.database.status === 'connected' ? (
+                <CheckCircle className="text-primary" size={24} />
+              ) : systemHealth.database.status === 'checking' ? (
+                <Loader2 className="text-muted-foreground animate-spin" size={24} />
+              ) : (
+                <AlertTriangle className="text-destructive" size={24} />
+              )}
               <div>
                 <p className="font-medium">Database</p>
-                <p className="text-sm text-muted-foreground">Connected</p>
+                <p className="text-sm text-muted-foreground">
+                  {systemHealth.database.status === 'connected' 
+                    ? `Connected (${systemHealth.database.latency}ms)` 
+                    : systemHealth.database.status}
+                </p>
               </div>
             </div>
             <div className="flex items-center gap-3 p-4 rounded-xl bg-muted/30">
-              <CheckCircle className="text-primary" size={24} />
+              {systemHealth.auth.status === 'active' ? (
+                <CheckCircle className="text-primary" size={24} />
+              ) : systemHealth.auth.status === 'checking' ? (
+                <Loader2 className="text-muted-foreground animate-spin" size={24} />
+              ) : (
+                <AlertTriangle className="text-warning" size={24} />
+              )}
               <div>
                 <p className="font-medium">Authentication</p>
-                <p className="text-sm text-muted-foreground">Active</p>
+                <p className="text-sm text-muted-foreground capitalize">{systemHealth.auth.status.replace('_', ' ')}</p>
               </div>
             </div>
             <div className="flex items-center gap-3 p-4 rounded-xl bg-muted/30">
-              <CheckCircle className="text-primary" size={24} />
+              {systemHealth.edgeFunctions.status === 'ready' ? (
+                <CheckCircle className="text-primary" size={24} />
+              ) : systemHealth.edgeFunctions.status === 'checking' ? (
+                <Loader2 className="text-muted-foreground animate-spin" size={24} />
+              ) : (
+                <AlertTriangle className="text-destructive" size={24} />
+              )}
               <div>
-                <p className="font-medium">API Endpoints</p>
-                <p className="text-sm text-muted-foreground">Ready for TMP APIs</p>
+                <p className="font-medium">Edge Functions</p>
+                <p className="text-sm text-muted-foreground capitalize">{systemHealth.edgeFunctions.status}</p>
               </div>
             </div>
           </div>
         </GlassCard>
 
-        {/* API Integration Placeholder */}
+        {/* TruckersMP API Integration */}
         <GlassCard>
-          <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-            <Code size={20} className="text-primary" />
-            TruckersMP API Integration
-          </h3>
-          <div className="p-6 rounded-xl border border-dashed border-border/50 text-center">
-            <Code size={48} className="mx-auto mb-4 text-muted-foreground opacity-50" />
-            <p className="text-muted-foreground mb-2">API integration placeholder</p>
-            <p className="text-sm text-muted-foreground">
-              Space reserved for TruckersMP API endpoints. Configure your API keys and endpoints here.
-            </p>
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-4">
+              <div className="p-3 rounded-full bg-primary/20 text-primary">
+                <Globe size={24} />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold">TruckersMP API Integration</h3>
+                <p className="text-sm text-muted-foreground">Live data from TruckersMP servers</p>
+              </div>
+            </div>
+            <Button onClick={fetchTMPData} disabled={tmpLoading} variant="outline" className="rounded-full">
+              {tmpLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <RefreshCw size={16} className="mr-2" />}
+              Fetch Data
+            </Button>
+          </div>
+
+          {tmpServers.length > 0 && (
+            <div className="space-y-6">
+              {/* Server Stats */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="p-4 rounded-xl bg-muted/30 text-center">
+                  <p className="text-2xl font-bold text-primary">{tmpServers.length}</p>
+                  <p className="text-sm text-muted-foreground">Total Servers</p>
+                </div>
+                <div className="p-4 rounded-xl bg-muted/30 text-center">
+                  <p className="text-2xl font-bold text-primary">{onlineServers.length}</p>
+                  <p className="text-sm text-muted-foreground">Online</p>
+                </div>
+                <div className="p-4 rounded-xl bg-muted/30 text-center">
+                  <p className="text-2xl font-bold text-primary">{totalPlayers}</p>
+                  <p className="text-sm text-muted-foreground">Total Players</p>
+                </div>
+                <div className="p-4 rounded-xl bg-muted/30 text-center">
+                  <p className="text-2xl font-bold text-primary">{tmpEvents.length}</p>
+                  <p className="text-sm text-muted-foreground">Upcoming Events</p>
+                </div>
+              </div>
+
+              {/* Servers List */}
+              <div>
+                <h4 className="font-medium mb-3">Live Servers</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 max-h-64 overflow-y-auto">
+                  {tmpServers.slice(0, 12).map(server => (
+                    <div key={server.id} className="flex items-center gap-3 p-3 rounded-xl bg-muted/20">
+                      {server.online ? (
+                        <Wifi className="text-primary" size={18} />
+                      ) : (
+                        <WifiOff className="text-destructive" size={18} />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-sm truncate">{server.name}</p>
+                        <p className="text-xs text-muted-foreground">{server.players}/{server.maxplayers} players</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Upcoming Events */}
+              {tmpEvents.length > 0 && (
+                <div>
+                  <h4 className="font-medium mb-3">Upcoming Events</h4>
+                  <div className="space-y-2 max-h-48 overflow-y-auto">
+                    {tmpEvents.slice(0, 5).map(event => (
+                      <div key={event.id} className="flex items-center gap-4 p-3 rounded-xl bg-muted/20">
+                        <Calendar className="text-primary shrink-0" size={18} />
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-sm truncate">{event.name}</p>
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                            <MapPin size={12} />
+                            <span>{event.departure?.city} → {event.arrive?.city}</span>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-xs text-primary">{format(new Date(event.startAt), 'MMM dd')}</p>
+                          <p className="text-xs text-muted-foreground">{event.attendances?.confirmed || 0} confirmed</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {tmpServers.length === 0 && !tmpLoading && (
+            <div className="p-6 rounded-xl border border-dashed border-border/50 text-center">
+              <Code size={48} className="mx-auto mb-4 text-muted-foreground opacity-50" />
+              <p className="text-muted-foreground mb-2">Click "Fetch Data" to load TruckersMP data</p>
+              <p className="text-sm text-muted-foreground">
+                This will fetch live server status and upcoming events from the TruckersMP API.
+              </p>
+            </div>
+          )}
+        </GlassCard>
+
+        {/* Logs Auto-Delete Info */}
+        <GlassCard>
+          <div className="flex items-center gap-4">
+            <div className="p-3 rounded-full bg-warning/20 text-warning">
+              <Clock size={24} />
+            </div>
+            <div>
+              <h3 className="font-semibold">Automatic Log Cleanup</h3>
+              <p className="text-sm text-muted-foreground">
+                System logs older than 2 days are automatically deleted to keep the database lean. 
+                You can manually trigger cleanup using the "Clean old logs" button above.
+              </p>
+            </div>
           </div>
         </GlassCard>
       </div>
