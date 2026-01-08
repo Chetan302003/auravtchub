@@ -14,6 +14,7 @@ import LogJob from "./pages/LogJob";
 import UserManagement from "./pages/UserManagement";
 import SystemLogs from "./pages/SystemLogs";
 import DeveloperPanel from "./pages/DeveloperPanel";
+import Announcements from "./pages/Announcements";
 import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
 
@@ -71,6 +72,7 @@ function AppRoutes() {
       <Route path="/log-job" element={<ProtectedRoute><LogJob /></ProtectedRoute>} />
       <Route path="/users" element={<ProtectedRoute><UserManagement /></ProtectedRoute>} />
       <Route path="/logs" element={<ProtectedRoute><SystemLogs /></ProtectedRoute>} />
+      <Route path="/announcements" element={<ProtectedRoute><Announcements /></ProtectedRoute>} />
       <Route path="/developer" element={<ProtectedRoute><DeveloperPanel /></ProtectedRoute>} />
       <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
       
