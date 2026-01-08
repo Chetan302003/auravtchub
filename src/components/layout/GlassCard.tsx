@@ -27,7 +27,7 @@ interface StatCardProps {
   title: string;
   value: string | number;
   icon?: ReactNode;
-  subtitle?: string;
+  subtitle?: ReactNode;
   trend?: {
     value: number;
     isPositive: boolean;
