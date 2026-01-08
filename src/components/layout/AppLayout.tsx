@@ -27,7 +27,7 @@ const navItems = [
   { icon: BarChart3, label: 'Fleet Overview', path: '/fleet', roles: ['all'] },
   { icon: Truck, label: 'My Stats', path: '/my-stats', roles: ['all'] },
   { icon: PlusCircle, label: 'Log Job', path: '/log-job', roles: ['all'] },
-  { icon: Users, label: 'User Management', path: '/users', roles: ['developer', 'superadmin', 'founder', 'management', 'hr'] },
+  { icon: Users, label: 'User Management', path: '/users', roles: ['developer', 'superadmin', 'founder', 'hr'] },
   { icon: FileText, label: 'System Logs', path: '/logs', roles: ['developer', 'superadmin', 'founder', 'management'] },
   { icon: Shield, label: 'Developer', path: '/developer', roles: ['developer'] },
   { icon: Settings, label: 'Settings', path: '/settings', roles: ['all'] },
