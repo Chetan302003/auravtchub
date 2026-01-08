@@ -86,40 +86,16 @@ export default function Auth() {
     }
   }, [user, authLoading, navigate]);
 
-  // Check for password recovery event or OTP verification
+  // Check for password recovery event
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
       if (event === 'PASSWORD_RECOVERY') {
         setView('reset-password');
-      }
-      
-      // Handle OTP sign-in for password reset
-      if (event === 'SIGNED_IN' && session) {
-        const pendingReset = sessionStorage.getItem('pendingPasswordReset');
-        if (pendingReset) {
-          const { password } = JSON.parse(pendingReset);
-          sessionStorage.removeItem('pendingPasswordReset');
-          
-          const { error } = await supabase.auth.updateUser({ password });
-          if (error) {
-            toast({
-              variant: 'destructive',
-              title: 'Password Update Failed',
-              description: error.message,
-            });
-          } else {
-            toast({
-              title: 'Password Updated!',
-              description: 'Your password has been successfully changed.',
-            });
-            navigate('/dashboard');
-          }
-        }
       }
     });
 
     return () => subscription.unsubscribe();
-  }, [navigate, toast]);
+  }, []);
 
   const handleLogin = async (data: LoginForm) => {
     setLoading(true);
@@ -170,37 +146,39 @@ export default function Auth() {
   const handleForgotPassword = async (data: ResetPasswordForm) => {
     setLoading(true);
     
-    // First sign in with magic link (OTP) to verify email ownership
-    const { error: otpError } = await supabase.auth.signInWithOtp({
-      email: data.email,
-      options: {
-        shouldCreateUser: false,
-      },
-    });
-    
-    if (otpError) {
+    try {
+      const { data: result, error } = await supabase.functions.invoke('reset-password', {
+        body: { email: data.email, password: data.password },
+      });
+      
+      if (error) {
+        toast({
+          variant: 'destructive',
+          title: 'Reset Failed',
+          description: error.message || 'Failed to reset password',
+        });
+      } else if (result?.error) {
+        toast({
+          variant: 'destructive',
+          title: 'Reset Failed',
+          description: result.error,
+        });
+      } else {
+        toast({
+          title: 'Password Reset!',
+          description: 'Your password has been updated. You can now sign in.',
+        });
+        setView('login');
+        resetPasswordForm.reset();
+      }
+    } catch (err) {
       toast({
         variant: 'destructive',
         title: 'Reset Failed',
-        description: otpError.message.includes('not found') 
-          ? 'No account found with this email address.'
-          : otpError.message,
+        description: 'An unexpected error occurred',
       });
-      setLoading(false);
-      return;
     }
     
-    // Store the new password temporarily to use after OTP verification
-    sessionStorage.setItem('pendingPasswordReset', JSON.stringify({
-      email: data.email,
-      password: data.password,
-    }));
-    
-    toast({
-      title: 'Verification Email Sent!',
-      description: 'Check your email and click the link to complete password reset.',
-    });
-    setView('login');
     setLoading(false);
   };
 
@@ -508,10 +486,6 @@ export default function Auth() {
                 {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
                 Reset Password
               </Button>
-              
-              <p className="text-center text-xs text-muted-foreground">
-                A verification email will be sent to confirm your identity.
-              </p>
             </form>
           )}
 
