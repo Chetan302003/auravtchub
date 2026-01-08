@@ -30,6 +30,11 @@ const signupSchema = z.object({
 
 const resetPasswordSchema = z.object({
   email: z.string().email('Please enter a valid email'),
+  password: z.string().min(8, 'Password must be at least 8 characters'),
+  confirmPassword: z.string(),
+}).refine(data => data.password === data.confirmPassword, {
+  message: "Passwords don't match",
+  path: ['confirmPassword'],
 });
 
 const newPasswordSchema = z.object({
@@ -67,7 +72,7 @@ export default function Auth() {
 
   const resetPasswordForm = useForm<ResetPasswordForm>({
     resolver: zodResolver(resetPasswordSchema),
-    defaultValues: { email: '' },
+    defaultValues: { email: '', password: '', confirmPassword: '' },
   });
 
   const newPasswordForm = useForm<NewPasswordForm>({
@@ -81,16 +86,40 @@ export default function Auth() {
     }
   }, [user, authLoading, navigate]);
 
-  // Check for password recovery event
+  // Check for password recovery event or OTP verification
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'PASSWORD_RECOVERY') {
         setView('reset-password');
+      }
+      
+      // Handle OTP sign-in for password reset
+      if (event === 'SIGNED_IN' && session) {
+        const pendingReset = sessionStorage.getItem('pendingPasswordReset');
+        if (pendingReset) {
+          const { password } = JSON.parse(pendingReset);
+          sessionStorage.removeItem('pendingPasswordReset');
+          
+          const { error } = await supabase.auth.updateUser({ password });
+          if (error) {
+            toast({
+              variant: 'destructive',
+              title: 'Password Update Failed',
+              description: error.message,
+            });
+          } else {
+            toast({
+              title: 'Password Updated!',
+              description: 'Your password has been successfully changed.',
+            });
+            navigate('/dashboard');
+          }
+        }
       }
     });
 
     return () => subscription.unsubscribe();
-  }, []);
+  }, [navigate, toast]);
 
   const handleLogin = async (data: LoginForm) => {
     setLoading(true);
@@ -140,23 +169,38 @@ export default function Auth() {
 
   const handleForgotPassword = async (data: ResetPasswordForm) => {
     setLoading(true);
-    const { error } = await supabase.auth.resetPasswordForEmail(data.email, {
-      redirectTo: `${window.location.origin}/auth`,
+    
+    // First sign in with magic link (OTP) to verify email ownership
+    const { error: otpError } = await supabase.auth.signInWithOtp({
+      email: data.email,
+      options: {
+        shouldCreateUser: false,
+      },
     });
     
-    if (error) {
+    if (otpError) {
       toast({
         variant: 'destructive',
         title: 'Reset Failed',
-        description: error.message,
+        description: otpError.message.includes('not found') 
+          ? 'No account found with this email address.'
+          : otpError.message,
       });
-    } else {
-      toast({
-        title: 'Email Sent!',
-        description: 'Check your email for the password reset link.',
-      });
-      setView('login');
+      setLoading(false);
+      return;
     }
+    
+    // Store the new password temporarily to use after OTP verification
+    sessionStorage.setItem('pendingPasswordReset', JSON.stringify({
+      email: data.email,
+      password: data.password,
+    }));
+    
+    toast({
+      title: 'Verification Email Sent!',
+      description: 'Check your email and click the link to complete password reset.',
+    });
+    setView('login');
     setLoading(false);
   };
 
@@ -401,7 +445,7 @@ export default function Auth() {
               <div className="text-center mb-4">
                 <h2 className="text-xl font-semibold">Reset Password</h2>
                 <p className="text-muted-foreground text-sm mt-1">
-                  Enter your email and we'll send you a reset link
+                  Enter your email and new password
                 </p>
               </div>
 
@@ -419,14 +463,55 @@ export default function Auth() {
                 )}
               </div>
 
+              <div className="space-y-2">
+                <Label htmlFor="reset-password">New Password</Label>
+                <div className="relative">
+                  <Input
+                    id="reset-password"
+                    type={showPassword ? 'text' : 'password'}
+                    placeholder="••••••••"
+                    className="glass-input pr-10"
+                    {...resetPasswordForm.register('password')}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  >
+                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
+                {resetPasswordForm.formState.errors.password && (
+                  <p className="text-destructive text-sm">{resetPasswordForm.formState.errors.password.message}</p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="reset-confirm-password">Confirm New Password</Label>
+                <Input
+                  id="reset-confirm-password"
+                  type="password"
+                  placeholder="••••••••"
+                  className="glass-input"
+                  {...resetPasswordForm.register('confirmPassword')}
+                />
+                {resetPasswordForm.formState.errors.confirmPassword && (
+                  <p className="text-destructive text-sm">{resetPasswordForm.formState.errors.confirmPassword.message}</p>
+                )}
+              </div>
+
               <Button 
                 type="submit" 
                 className="w-full rounded-full neon-glow"
                 disabled={loading}
               >
                 {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-                Send Reset Link
+                Reset Password
               </Button>
+              
+              <p className="text-center text-xs text-muted-foreground">
+                A verification email will be sent to confirm your identity.
+              </p>
             </form>
           )}
 
