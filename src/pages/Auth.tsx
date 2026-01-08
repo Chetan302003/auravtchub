@@ -9,7 +9,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, Truck, Eye, EyeOff } from 'lucide-react';
+import { Loader2, Truck, Eye, EyeOff, ArrowLeft } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
 
 const loginSchema = z.object({
   email: z.string().email('Please enter a valid email'),
@@ -27,11 +28,27 @@ const signupSchema = z.object({
   path: ['confirmPassword'],
 });
 
+const resetPasswordSchema = z.object({
+  email: z.string().email('Please enter a valid email'),
+});
+
+const newPasswordSchema = z.object({
+  password: z.string().min(8, 'Password must be at least 8 characters'),
+  confirmPassword: z.string(),
+}).refine(data => data.password === data.confirmPassword, {
+  message: "Passwords don't match",
+  path: ['confirmPassword'],
+});
+
 type LoginForm = z.infer<typeof loginSchema>;
 type SignupForm = z.infer<typeof signupSchema>;
+type ResetPasswordForm = z.infer<typeof resetPasswordSchema>;
+type NewPasswordForm = z.infer<typeof newPasswordSchema>;
+
+type AuthView = 'login' | 'signup' | 'forgot-password' | 'reset-password';
 
 export default function Auth() {
-  const [isLogin, setIsLogin] = useState(true);
+  const [view, setView] = useState<AuthView>('login');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const { signIn, signUp, user, loading: authLoading } = useAuth();
@@ -48,11 +65,32 @@ export default function Auth() {
     defaultValues: { username: '', email: '', password: '', confirmPassword: '', tmpId: '' },
   });
 
+  const resetPasswordForm = useForm<ResetPasswordForm>({
+    resolver: zodResolver(resetPasswordSchema),
+    defaultValues: { email: '' },
+  });
+
+  const newPasswordForm = useForm<NewPasswordForm>({
+    resolver: zodResolver(newPasswordSchema),
+    defaultValues: { password: '', confirmPassword: '' },
+  });
+
   useEffect(() => {
     if (user && !authLoading) {
       navigate('/dashboard');
     }
   }, [user, authLoading, navigate]);
+
+  // Check for password recovery event
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        setView('reset-password');
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
 
   const handleLogin = async (data: LoginForm) => {
     setLoading(true);
@@ -95,7 +133,49 @@ export default function Auth() {
         title: 'Account Created!',
         description: 'Your account is pending approval from HR. You\'ll be notified when approved.',
       });
-      setIsLogin(true);
+      setView('login');
+    }
+    setLoading(false);
+  };
+
+  const handleForgotPassword = async (data: ResetPasswordForm) => {
+    setLoading(true);
+    const { error } = await supabase.auth.resetPasswordForEmail(data.email, {
+      redirectTo: `${window.location.origin}/auth`,
+    });
+    
+    if (error) {
+      toast({
+        variant: 'destructive',
+        title: 'Reset Failed',
+        description: error.message,
+      });
+    } else {
+      toast({
+        title: 'Email Sent!',
+        description: 'Check your email for the password reset link.',
+      });
+      setView('login');
+    }
+    setLoading(false);
+  };
+
+  const handleNewPassword = async (data: NewPasswordForm) => {
+    setLoading(true);
+    const { error } = await supabase.auth.updateUser({ password: data.password });
+    
+    if (error) {
+      toast({
+        variant: 'destructive',
+        title: 'Update Failed',
+        description: error.message,
+      });
+    } else {
+      toast({
+        title: 'Password Updated!',
+        description: 'Your password has been successfully changed.',
+      });
+      navigate('/dashboard');
     }
     setLoading(false);
   };
@@ -133,27 +213,40 @@ export default function Auth() {
         </div>
 
         <GlassCard className="p-8">
-          {/* Tab switcher */}
-          <div className="flex mb-8 p-1 bg-muted/30 rounded-full">
-            <button
-              onClick={() => setIsLogin(true)}
-              className={`flex-1 py-2 px-4 rounded-full text-sm font-medium transition-all ${
-                isLogin ? 'bg-primary text-primary-foreground neon-glow' : 'text-muted-foreground'
-              }`}
-            >
-              Sign In
-            </button>
-            <button
-              onClick={() => setIsLogin(false)}
-              className={`flex-1 py-2 px-4 rounded-full text-sm font-medium transition-all ${
-                !isLogin ? 'bg-primary text-primary-foreground neon-glow' : 'text-muted-foreground'
-              }`}
-            >
-              Sign Up
-            </button>
-          </div>
+          {/* Tab switcher - only show for login/signup */}
+          {(view === 'login' || view === 'signup') && (
+            <div className="flex mb-8 p-1 bg-muted/30 rounded-full">
+              <button
+                onClick={() => setView('login')}
+                className={`flex-1 py-2 px-4 rounded-full text-sm font-medium transition-all ${
+                  view === 'login' ? 'bg-primary text-primary-foreground neon-glow' : 'text-muted-foreground'
+                }`}
+              >
+                Sign In
+              </button>
+              <button
+                onClick={() => setView('signup')}
+                className={`flex-1 py-2 px-4 rounded-full text-sm font-medium transition-all ${
+                  view === 'signup' ? 'bg-primary text-primary-foreground neon-glow' : 'text-muted-foreground'
+                }`}
+              >
+                Sign Up
+              </button>
+            </div>
+          )}
 
-          {isLogin ? (
+          {/* Back button for forgot/reset password */}
+          {(view === 'forgot-password' || view === 'reset-password') && (
+            <button
+              onClick={() => setView('login')}
+              className="flex items-center gap-2 text-muted-foreground hover:text-foreground mb-6 transition-colors"
+            >
+              <ArrowLeft size={18} />
+              <span>Back to Sign In</span>
+            </button>
+          )}
+
+          {view === 'login' && (
             <form onSubmit={loginForm.handleSubmit(handleLogin)} className="space-y-6">
               <div className="space-y-2">
                 <Label htmlFor="email">Email</Label>
@@ -170,7 +263,16 @@ export default function Auth() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="password">Password</Label>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="password">Password</Label>
+                  <button
+                    type="button"
+                    onClick={() => setView('forgot-password')}
+                    className="text-xs text-primary hover:underline"
+                  >
+                    Forgot password?
+                  </button>
+                </div>
                 <div className="relative">
                   <Input
                     id="password"
@@ -201,7 +303,9 @@ export default function Auth() {
                 Sign In
               </Button>
             </form>
-          ) : (
+          )}
+
+          {view === 'signup' && (
             <form onSubmit={signupForm.handleSubmit(handleSignup)} className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="username">Username</Label>
@@ -289,6 +393,97 @@ export default function Auth() {
               <p className="text-center text-xs text-muted-foreground">
                 New accounts require HR approval before access is granted.
               </p>
+            </form>
+          )}
+
+          {view === 'forgot-password' && (
+            <form onSubmit={resetPasswordForm.handleSubmit(handleForgotPassword)} className="space-y-6">
+              <div className="text-center mb-4">
+                <h2 className="text-xl font-semibold">Reset Password</h2>
+                <p className="text-muted-foreground text-sm mt-1">
+                  Enter your email and we'll send you a reset link
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="reset-email">Email</Label>
+                <Input
+                  id="reset-email"
+                  type="email"
+                  placeholder="driver@aura-vtc.com"
+                  className="glass-input"
+                  {...resetPasswordForm.register('email')}
+                />
+                {resetPasswordForm.formState.errors.email && (
+                  <p className="text-destructive text-sm">{resetPasswordForm.formState.errors.email.message}</p>
+                )}
+              </div>
+
+              <Button 
+                type="submit" 
+                className="w-full rounded-full neon-glow"
+                disabled={loading}
+              >
+                {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+                Send Reset Link
+              </Button>
+            </form>
+          )}
+
+          {view === 'reset-password' && (
+            <form onSubmit={newPasswordForm.handleSubmit(handleNewPassword)} className="space-y-6">
+              <div className="text-center mb-4">
+                <h2 className="text-xl font-semibold">Set New Password</h2>
+                <p className="text-muted-foreground text-sm mt-1">
+                  Enter your new password below
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="new-password">New Password</Label>
+                <div className="relative">
+                  <Input
+                    id="new-password"
+                    type={showPassword ? 'text' : 'password'}
+                    placeholder="••••••••"
+                    className="glass-input pr-10"
+                    {...newPasswordForm.register('password')}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  >
+                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
+                {newPasswordForm.formState.errors.password && (
+                  <p className="text-destructive text-sm">{newPasswordForm.formState.errors.password.message}</p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="confirm-new-password">Confirm Password</Label>
+                <Input
+                  id="confirm-new-password"
+                  type="password"
+                  placeholder="••••••••"
+                  className="glass-input"
+                  {...newPasswordForm.register('confirmPassword')}
+                />
+                {newPasswordForm.formState.errors.confirmPassword && (
+                  <p className="text-destructive text-sm">{newPasswordForm.formState.errors.confirmPassword.message}</p>
+                )}
+              </div>
+
+              <Button 
+                type="submit" 
+                className="w-full rounded-full neon-glow"
+                disabled={loading}
+              >
+                {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+                Update Password
+              </Button>
             </form>
           )}
         </GlassCard>
