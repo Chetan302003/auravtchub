@@ -1,7 +1,8 @@
-import { ReactNode, useState } from 'react';
+import { ReactNode, useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
+import { useTruckersMP } from '@/hooks/useTruckersMP';
 import { Button } from '@/components/ui/button';
 import { 
   LayoutDashboard, 
@@ -15,7 +16,8 @@ import {
   Shield,
   Menu,
   X,
-  ChevronRight
+  ChevronRight,
+  Megaphone
 } from 'lucide-react';
 
 interface AppLayoutProps {
@@ -27,6 +29,7 @@ const navItems = [
   { icon: BarChart3, label: 'Fleet Overview', path: '/fleet', roles: ['all'] },
   { icon: Truck, label: 'My Stats', path: '/my-stats', roles: ['all'] },
   { icon: PlusCircle, label: 'Log Job', path: '/log-job', roles: ['all'] },
+  { icon: Megaphone, label: 'Announcements', path: '/announcements', roles: ['developer', 'superadmin', 'founder', 'management'] },
   { icon: Users, label: 'User Management', path: '/users', roles: ['developer', 'superadmin', 'founder', 'hr'] },
   { icon: FileText, label: 'System Logs', path: '/logs', roles: ['developer', 'superadmin', 'founder', 'management'] },
   { icon: Shield, label: 'Developer', path: '/developer', roles: ['developer'] },
@@ -35,9 +38,26 @@ const navItems = [
 
 export function AppLayout({ children }: AppLayoutProps) {
   const { profile, roles, signOut, isApproved } = useAuth();
+  const { fetchPlayerAvatar } = useTruckersMP();
   const location = useLocation();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+
+  // Fetch TMP avatar if tmp_id exists
+  useEffect(() => {
+    const loadAvatar = async () => {
+      if (profile?.tmp_id) {
+        const avatar = await fetchPlayerAvatar(profile.tmp_id);
+        if (avatar) {
+          setAvatarUrl(avatar);
+        }
+      } else if (profile?.avatar_url) {
+        setAvatarUrl(profile.avatar_url);
+      }
+    };
+    loadAvatar();
+  }, [profile?.tmp_id, profile?.avatar_url, fetchPlayerAvatar]);
 
   const handleSignOut = async () => {
     await signOut();
@@ -74,13 +94,22 @@ export function AppLayout({ children }: AppLayoutProps) {
             <p className="text-muted-foreground text-sm mt-1">Fleet Management</p>
           </div>
 
-          {/* User info */}
-          <div className="glass-card p-4 mb-6">
+          {/* User info - Fixed minimum height to prevent shrinking */}
+          <div className="glass-card p-4 mb-6 min-h-[100px]">
             <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold text-lg neon-pulse">
-                {profile?.username?.charAt(0).toUpperCase() || 'U'}
+              <div className="w-12 h-12 shrink-0 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold text-lg neon-pulse overflow-hidden">
+                {avatarUrl ? (
+                  <img 
+                    src={avatarUrl} 
+                    alt={profile?.username}
+                    className="w-full h-full object-cover"
+                    onError={() => setAvatarUrl(null)}
+                  />
+                ) : (
+                  profile?.username?.charAt(0).toUpperCase() || 'U'
+                )}
               </div>
-              <div className="flex-1 min-w-0">
+              <div className="flex-1 min-w-0 overflow-hidden">
                 <p className="font-semibold truncate">{profile?.username || 'User'}</p>
                 <p className="text-xs text-muted-foreground truncate">
                   {roles[0]?.replace('_', ' ').toUpperCase() || 'Driver'}
@@ -95,7 +124,7 @@ export function AppLayout({ children }: AppLayoutProps) {
           </div>
 
           {/* Navigation */}
-          <nav className="flex-1 space-y-2">
+          <nav className="flex-1 space-y-2 overflow-y-auto">
             {filteredNavItems.map((item) => {
               const isActive = location.pathname === item.path;
               return (
@@ -110,9 +139,9 @@ export function AppLayout({ children }: AppLayoutProps) {
                       : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
                   )}
                 >
-                  <item.icon size={20} />
-                  <span className="font-medium">{item.label}</span>
-                  {isActive && <ChevronRight size={16} className="ml-auto" />}
+                  <item.icon size={20} className="shrink-0" />
+                  <span className="font-medium truncate">{item.label}</span>
+                  {isActive && <ChevronRight size={16} className="ml-auto shrink-0" />}
                 </Link>
               );
             })}

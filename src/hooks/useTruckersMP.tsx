@@ -1,7 +1,5 @@
 import { useState, useCallback } from 'react';
-
-// TruckersMP API base URL
-const TMP_API_BASE = 'https://api.truckersmp.com/v2';
+import { supabase } from '@/integrations/supabase/client';
 
 export interface TMPPlayer {
   id: number;
@@ -86,33 +84,27 @@ export interface TMPServer {
   syncdelay: number;
 }
 
-// Placeholder function - TruckersMP API has CORS restrictions
-// In production, this would need to go through an edge function
-async function fetchFromTMP<T>(endpoint: string): Promise<T | null> {
-  try {
-    // Note: Direct API calls will fail due to CORS
-    // This is a placeholder for edge function integration
-    console.log(`[TMP API] Would fetch: ${TMP_API_BASE}${endpoint}`);
-    return null;
-  } catch (error) {
-    console.error(`[TMP API] Error fetching ${endpoint}:`, error);
-    return null;
-  }
-}
-
 export function useTruckersMP() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Fetch player data by TruckersMP ID
+  // Fetch player data by TruckersMP ID using edge function
   const getPlayer = useCallback(async (tmpId: string): Promise<TMPPlayer | null> => {
+    if (!tmpId || !/^\d+$/.test(tmpId)) {
+      return null;
+    }
+    
     setLoading(true);
     setError(null);
     try {
-      // Placeholder - would call edge function
-      const data = await fetchFromTMP<{ response: TMPPlayer }>(`/player/${tmpId}`);
+      const { data, error: fnError } = await supabase.functions.invoke('tmp-player', {
+        body: { tmpId },
+      });
+      
+      if (fnError) throw fnError;
       return data?.response || null;
     } catch (err) {
+      console.error('[TMP] Error fetching player:', err);
       setError('Failed to fetch player data');
       return null;
     } finally {
@@ -120,20 +112,43 @@ export function useTruckersMP() {
     }
   }, []);
 
-  // Fetch player avatar URL (returns placeholder if not available)
-  const getPlayerAvatar = useCallback((tmpId: string, size: 'small' | 'large' = 'small'): string => {
-    // Placeholder avatar - in production this would fetch real data
-    return `https://static.truckersmp.com/images/default_avatar.png`;
+  // Get player avatar URL directly from TruckersMP (no CORS for images)
+  const getPlayerAvatarUrl = useCallback((tmpId: string): string => {
+    if (!tmpId || !/^\d+$/.test(tmpId)) {
+      return '';
+    }
+    // TruckersMP avatar URLs follow this pattern
+    return `https://truckersmp.com/user/${tmpId}/avatar`;
   }, []);
 
-  // Fetch upcoming events
+  // Fetch player avatar using edge function
+  const fetchPlayerAvatar = useCallback(async (tmpId: string): Promise<string | null> => {
+    if (!tmpId || !/^\d+$/.test(tmpId)) return null;
+    
+    try {
+      const { data, error: fnError } = await supabase.functions.invoke('tmp-player', {
+        body: { tmpId },
+      });
+      
+      if (fnError) throw fnError;
+      return data?.response?.avatar || null;
+    } catch (err) {
+      console.error('[TMP] Error fetching avatar:', err);
+      return null;
+    }
+  }, []);
+
+  // Fetch upcoming events using edge function
   const getEvents = useCallback(async (): Promise<TMPEvent[]> => {
     setLoading(true);
     setError(null);
     try {
-      const data = await fetchFromTMP<{ response: TMPEvent[] }>('/events');
+      const { data, error: fnError } = await supabase.functions.invoke('tmp-events', {});
+      
+      if (fnError) throw fnError;
       return data?.response || [];
     } catch (err) {
+      console.error('[TMP] Error fetching events:', err);
       setError('Failed to fetch events');
       return [];
     } finally {
@@ -141,14 +156,17 @@ export function useTruckersMP() {
     }
   }, []);
 
-  // Fetch server status
+  // Fetch server status using edge function
   const getServers = useCallback(async (): Promise<TMPServer[]> => {
     setLoading(true);
     setError(null);
     try {
-      const data = await fetchFromTMP<{ response: TMPServer[] }>('/servers');
+      const { data, error: fnError } = await supabase.functions.invoke('tmp-servers', {});
+      
+      if (fnError) throw fnError;
       return data?.response || [];
     } catch (err) {
+      console.error('[TMP] Error fetching servers:', err);
       setError('Failed to fetch servers');
       return [];
     } finally {
@@ -158,7 +176,6 @@ export function useTruckersMP() {
 
   // Validate TruckersMP ID format
   const isValidTMPId = useCallback((tmpId: string): boolean => {
-    // TMP IDs are numeric strings
     return /^\d+$/.test(tmpId);
   }, []);
 
@@ -166,16 +183,10 @@ export function useTruckersMP() {
     loading,
     error,
     getPlayer,
-    getPlayerAvatar,
+    getPlayerAvatarUrl,
+    fetchPlayerAvatar,
     getEvents,
     getServers,
     isValidTMPId,
   };
 }
-
-// Edge function endpoint placeholder for future implementation
-export const TMP_EDGE_ENDPOINTS = {
-  player: '/functions/v1/tmp-player',
-  events: '/functions/v1/tmp-events',
-  servers: '/functions/v1/tmp-servers',
-} as const;
