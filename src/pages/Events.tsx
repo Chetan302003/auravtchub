@@ -120,7 +120,7 @@ export default function Events() {
       console.error('Error fetching VTC events:', error);
       return;
     }
-
+    const safeData = data || [];
     // Get participant counts and user participation
     const eventsWithParticipants = await Promise.all((data || []).map(async (event) => {
       const { count } = await supabase
@@ -272,6 +272,11 @@ export default function Events() {
   };
 
   const openEditDialog = (event: VTCEvent) => {
+    const safeSlice = (val: any) => {
+    if (!val) return '';
+    const str = String(val); // Force it to be a string
+    return str.includes('T') ? str.slice(0, 16) : str;
+  };
     setFormData({
       title: event.title,
       description: event.description || '',
@@ -281,8 +286,8 @@ export default function Events() {
       departure_location: event.departure_location || '',
       arrival_city: event.arrival_city,
       arrival_location: event.arrival_location || '',
-      start_time: event.start_time.slice(0, 16),
-      meetup_time: event.meetup_time?.slice(0, 16) || '',
+      start_time: safeSlice(event.start_time),
+      meetup_time: safeSlice(event.meetup_time),
       server_name: event.server_name || '',
       max_participants: event.max_participants?.toString() || '',
       banner_url: event.banner_url || '',
