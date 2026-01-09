@@ -32,7 +32,7 @@ serve(async (req) => {
 
     const data = await response.json();
     console.log(`[TMP API] Fetched ${data.response?.length || 0} events`);
-
+    const eventsArray = Array.isArray(data.response) ? data.response : [];
     return new Response(
       JSON.stringify(data),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
