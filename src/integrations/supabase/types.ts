@@ -71,6 +71,38 @@ export type Database = {
         }
         Relationships: []
       }
+      event_participants: {
+        Row: {
+          created_at: string
+          event_id: string
+          id: string
+          status: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          event_id: string
+          id?: string
+          status?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          event_id?: string
+          id?: string
+          status?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "event_participants_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "vtc_events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       job_logs: {
         Row: {
           cargo_type: string | null
@@ -213,6 +245,75 @@ export type Database = {
           id?: string
           role?: Database["public"]["Enums"]["app_role"]
           user_id?: string
+        }
+        Relationships: []
+      }
+      vtc_events: {
+        Row: {
+          arrival_city: string
+          arrival_location: string | null
+          banner_url: string | null
+          created_at: string
+          created_by: string | null
+          departure_city: string
+          departure_location: string | null
+          description: string | null
+          event_type: string
+          game: string
+          id: string
+          max_participants: number | null
+          meetup_time: string | null
+          required_dlcs: string[] | null
+          route_url: string | null
+          server_name: string | null
+          start_time: string
+          status: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          arrival_city: string
+          arrival_location?: string | null
+          banner_url?: string | null
+          created_at?: string
+          created_by?: string | null
+          departure_city: string
+          departure_location?: string | null
+          description?: string | null
+          event_type?: string
+          game?: string
+          id?: string
+          max_participants?: number | null
+          meetup_time?: string | null
+          required_dlcs?: string[] | null
+          route_url?: string | null
+          server_name?: string | null
+          start_time: string
+          status?: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          arrival_city?: string
+          arrival_location?: string | null
+          banner_url?: string | null
+          created_at?: string
+          created_by?: string | null
+          departure_city?: string
+          departure_location?: string | null
+          description?: string | null
+          event_type?: string
+          game?: string
+          id?: string
+          max_participants?: number | null
+          meetup_time?: string | null
+          required_dlcs?: string[] | null
+          route_url?: string | null
+          server_name?: string | null
+          start_time?: string
+          status?: string
+          title?: string
+          updated_at?: string
         }
         Relationships: []
       }
