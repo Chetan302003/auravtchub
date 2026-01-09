@@ -2,7 +2,6 @@ import { useState, useRef, useEffect } from 'react';
 import { GlassCard } from '@/components/layout/GlassCard';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import {
@@ -15,7 +14,9 @@ import {
   Share2,
   Loader2,
   GripVertical,
-  AlertCircle
+  AlertCircle,
+  ExternalLink,
+  Globe
 } from 'lucide-react';
 
 // Placeholder for Mapbox token - will be configured later
@@ -32,20 +33,39 @@ interface RouteData {
   waypoints: Waypoint[];
   totalDistance: number;
   estimatedTime: number;
+  tmpRouteUrl?: string;
 }
 
+// TruckersMP route URL generator
+const generateTMPRouteUrl = (waypoints: Waypoint[]): string => {
+  const validWaypoints = waypoints.filter(w => w.name.trim());
+  if (validWaypoints.length < 2) return '';
+  
+  const departure = encodeURIComponent(validWaypoints[0].name);
+  const arrival = encodeURIComponent(validWaypoints[validWaypoints.length - 1].name);
+  
+  // TruckersMP uses this format for event routes
+  return `https://map.truckersmp.com/#/${departure}/${arrival}`;
+};
+
+// ETS2 Map route URL generator  
+const generateETS2MapUrl = (waypoints: Waypoint[]): string => {
+  const validWaypoints = waypoints.filter(w => w.name.trim());
+  if (validWaypoints.length < 2) return '';
+  
+  // Using ets2.lt map for route visualization
+  return `https://ets2.lt/en/route-advisor/`;
+};
+
 /**
- * Convoy Route Planner with optional Mapbox integration
+ * Convoy Route Planner with TruckersMP integration
  * 
- * SETUP INSTRUCTIONS:
- * 1. Get a Mapbox public token from https://mapbox.com
- * 2. Add VITE_MAPBOX_TOKEN to your environment or Lovable secrets
+ * Uses TruckersMP Map for route visualization instead of real-world maps.
+ * Optional Mapbox integration for geocoding city names.
  * 
  * TAURI CONVERSION NOTES:
  * -----------------------
- * The map component works the same in Tauri. For offline maps:
- * 1. Consider using offline tile caching
- * 2. Or integrate with local map tile server
+ * This component works the same in Tauri. External links open in system browser.
  */
 export function ConvoyRoutePlanner() {
   const mapContainer = useRef<HTMLDivElement>(null);
@@ -151,7 +171,7 @@ export function ConvoyRoutePlanner() {
     };
   }, []);
 
-  // Geocode location name to coordinates
+  // Geocode location name to coordinates (optional, for map display)
   const geocodeLocation = async (query: string): Promise<[number, number] | null> => {
     if (!MAPBOX_TOKEN) return null;
     
@@ -170,7 +190,7 @@ export function ConvoyRoutePlanner() {
     return null;
   };
 
-  // Calculate route between waypoints
+  // Calculate route and generate TMP links
   const calculateRoute = async () => {
     const validWaypoints = waypoints.filter(w => w.name.trim());
     
@@ -182,7 +202,7 @@ export function ConvoyRoutePlanner() {
     setLoading(true);
 
     try {
-      // Geocode all waypoints
+      // Geocode all waypoints for map display (if Mapbox available)
       const geocodedWaypoints = await Promise.all(
         validWaypoints.map(async (wp) => {
           if (wp.coordinates) return wp;
@@ -193,19 +213,19 @@ export function ConvoyRoutePlanner() {
 
       const withCoords = geocodedWaypoints.filter(w => w.coordinates);
       
-      if (withCoords.length < 2) {
-        toast.error('Could not find locations. Please check city names.');
-        setLoading(false);
-        return;
-      }
-
       setWaypoints(prev => prev.map(w => {
         const found = geocodedWaypoints.find(gw => gw.id === w.id);
         return found || w;
       }));
 
-      // Get route from Mapbox Directions API
-      if (MAPBOX_TOKEN) {
+      // Generate TruckersMP route URL
+      const tmpRouteUrl = generateTMPRouteUrl(validWaypoints);
+
+      // Get route from Mapbox Directions API (if available)
+      let totalDistance = 0;
+      let estimatedTime = 0;
+
+      if (MAPBOX_TOKEN && withCoords.length >= 2) {
         const coordinates = withCoords.map(w => w.coordinates!.join(',')).join(';');
         const response = await fetch(
           `https://api.mapbox.com/directions/v5/mapbox/driving/${coordinates}?geometries=geojson&overview=full&access_token=${MAPBOX_TOKEN}`
@@ -214,12 +234,8 @@ export function ConvoyRoutePlanner() {
 
         if (data.routes && data.routes.length > 0) {
           const route = data.routes[0];
-          
-          setRouteData({
-            waypoints: withCoords,
-            totalDistance: route.distance / 1000, // meters to km
-            estimatedTime: route.duration / 60, // seconds to minutes
-          });
+          totalDistance = route.distance / 1000; // meters to km
+          estimatedTime = route.duration / 60; // seconds to minutes
 
           // Update map
           if (mapRef.current && mapLoaded) {
@@ -255,18 +271,17 @@ export function ConvoyRoutePlanner() {
             );
             mapRef.current.fitBounds(bounds, { padding: 50 });
           }
-
-          toast.success('Route calculated!');
         }
-      } else {
-        // Without Mapbox, just show waypoints without actual routing
-        setRouteData({
-          waypoints: withCoords,
-          totalDistance: 0,
-          estimatedTime: 0,
-        });
-        toast.info('Route saved (map preview requires Mapbox token)');
       }
+
+      setRouteData({
+        waypoints: withCoords.length > 0 ? withCoords : validWaypoints,
+        totalDistance,
+        estimatedTime,
+        tmpRouteUrl,
+      });
+
+      toast.success('Route planned! Open in TruckersMP Map for in-game navigation.');
     } catch (err) {
       console.error('Route calculation error:', err);
       toast.error('Failed to calculate route');
@@ -305,6 +320,14 @@ export function ConvoyRoutePlanner() {
     const hours = Math.floor(minutes / 60);
     const mins = Math.round(minutes % 60);
     return hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
+  };
+
+  const openTMPMap = () => {
+    if (routeData?.tmpRouteUrl) {
+      window.open(routeData.tmpRouteUrl, '_blank');
+    } else {
+      window.open('https://map.truckersmp.com', '_blank');
+    }
   };
 
   return (
@@ -370,39 +393,53 @@ export function ConvoyRoutePlanner() {
             {loading ? (
               <>
                 <Loader2 size={16} className="animate-spin mr-2" />
-                Calculating...
+                Planning...
               </>
             ) : (
               <>
                 <Navigation size={16} className="mr-2" />
-                Calculate Route
+                Plan Route
               </>
             )}
           </Button>
 
           {/* Route Summary */}
-          {routeData && routeData.totalDistance > 0 && (
-            <div className="p-4 rounded-xl bg-primary/10 border border-primary/20 space-y-2">
+          {routeData && (
+            <div className="p-4 rounded-xl bg-primary/10 border border-primary/20 space-y-3">
               <h4 className="font-semibold text-primary">Route Summary</h4>
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <div>
-                  <p className="text-muted-foreground">Total Distance</p>
-                  <p className="font-bold">{Math.round(routeData.totalDistance)} km</p>
+              
+              {routeData.totalDistance > 0 && (
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <p className="text-muted-foreground">Estimated Distance</p>
+                    <p className="font-bold">{Math.round(routeData.totalDistance)} km</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Est. Time (Real)</p>
+                    <p className="font-bold">{formatTime(routeData.estimatedTime)}</p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-muted-foreground">Est. Time</p>
-                  <p className="font-bold">{formatTime(routeData.estimatedTime)}</p>
+              )}
+
+              <div className="flex flex-col gap-2 pt-2">
+                <Button 
+                  onClick={openTMPMap}
+                  className="w-full gap-2 rounded-full"
+                >
+                  <Globe size={14} />
+                  Open in TruckersMP Map
+                  <ExternalLink size={12} />
+                </Button>
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" className="flex-1 gap-1 rounded-full">
+                    <Save size={12} />
+                    Save Route
+                  </Button>
+                  <Button variant="outline" size="sm" className="flex-1 gap-1 rounded-full">
+                    <Share2 size={12} />
+                    Share
+                  </Button>
                 </div>
-              </div>
-              <div className="flex gap-2 pt-2">
-                <Button variant="outline" size="sm" className="flex-1 gap-1 rounded-full">
-                  <Save size={12} />
-                  Save Route
-                </Button>
-                <Button variant="outline" size="sm" className="flex-1 gap-1 rounded-full">
-                  <Share2 size={12} />
-                  Share
-                </Button>
               </div>
             </div>
           )}
@@ -412,23 +449,35 @@ export function ConvoyRoutePlanner() {
         <GlassCard className="min-h-[400px] relative overflow-hidden">
           {!MAPBOX_TOKEN ? (
             <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center">
-              <AlertCircle size={48} className="text-muted-foreground mb-4" />
-              <h4 className="font-semibold text-lg mb-2">Map Preview Unavailable</h4>
+              <Globe size={48} className="text-primary mb-4" />
+              <h4 className="font-semibold text-lg mb-2">TruckersMP Route Planner</h4>
               <p className="text-muted-foreground text-sm mb-4">
-                To enable the interactive map, add your Mapbox public token.
+                Plan your convoy route using in-game city names. 
+                The route will open in TruckersMP Map for navigation.
               </p>
-              <div className="text-xs text-muted-foreground space-y-1">
-                <p>1. Get a free token at mapbox.com</p>
-                <p>2. Add VITE_MAPBOX_TOKEN to your environment</p>
-                <p>3. Refresh the page</p>
+              
+              {/* TruckersMP Map Preview */}
+              <div className="w-full max-w-sm space-y-3">
+                <Button 
+                  onClick={() => window.open('https://map.truckersmp.com', '_blank')}
+                  variant="outline"
+                  className="w-full gap-2 rounded-full"
+                >
+                  <Globe size={16} />
+                  Open TruckersMP Map
+                  <ExternalLink size={12} />
+                </Button>
+                
+                <div className="text-xs text-muted-foreground space-y-1">
+                  <p>Enter ETS2/ATS city names above</p>
+                  <p>e.g., "Berlin", "Paris", "Rotterdam"</p>
+                </div>
               </div>
               
-              {/* Placeholder map illustration */}
-              <div className="mt-6 w-full max-w-sm h-48 rounded-xl bg-muted/30 border border-border/50 flex items-center justify-center">
-                <div className="text-center text-muted-foreground">
-                  <Route size={40} className="mx-auto mb-2 opacity-50" />
-                  <p className="text-xs">Interactive Map Preview</p>
-                </div>
+              {/* Optional Mapbox info */}
+              <div className="mt-6 p-3 rounded-lg bg-muted/30 text-xs text-muted-foreground">
+                <p className="font-medium mb-1">Optional: Enable Map Preview</p>
+                <p>Add VITE_MAPBOX_TOKEN to show a map preview here.</p>
               </div>
             </div>
           ) : (
@@ -446,7 +495,7 @@ export function ConvoyRoutePlanner() {
       {/* Waypoint List */}
       {routeData && routeData.waypoints.length > 0 && (
         <GlassCard>
-          <h4 className="font-semibold mb-3">Route Stops</h4>
+          <h4 className="font-semibold mb-3">Convoy Route Stops</h4>
           <div className="flex flex-wrap gap-2">
             {routeData.waypoints.map((wp, idx) => (
               <Badge
@@ -464,6 +513,12 @@ export function ConvoyRoutePlanner() {
                 {wp.name}
               </Badge>
             ))}
+          </div>
+          
+          {/* TMP Event Route Tips */}
+          <div className="mt-4 p-3 rounded-lg bg-muted/30 text-sm text-muted-foreground">
+            <p className="font-medium text-foreground mb-1">📍 For VTC Events</p>
+            <p>Use this route in the Event creation form. Players can follow along using TruckersMP Map during the convoy.</p>
           </div>
         </GlassCard>
       )}

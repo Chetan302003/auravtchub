@@ -18,7 +18,8 @@ import {
   X,
   ChevronRight,
   Megaphone,
-  Calendar
+  Calendar,
+  Activity
 } from 'lucide-react';
 
 interface AppLayoutProps {
@@ -29,6 +30,7 @@ const navItems = [
   { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard', roles: ['all'] },
   { icon: BarChart3, label: 'Fleet Overview', path: '/fleet', roles: ['all'] },
   { icon: Calendar, label: 'Events', path: '/events', roles: ['all'] },
+  { icon: Activity, label: 'Telemetry', path: '/telemetry', roles: ['all'] },
   { icon: Truck, label: 'My Stats', path: '/my-stats', roles: ['all'] },
   { icon: PlusCircle, label: 'Log Job', path: '/log-job', roles: ['all'] },
   { icon: Megaphone, label: 'Announcements', path: '/announcements', roles: ['developer', 'superadmin', 'founder', 'management'] },

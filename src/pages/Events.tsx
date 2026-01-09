@@ -224,7 +224,7 @@ const fetchTMPEvents = async () => {
     }
 
     toast.success('Event deleted');
-    fetchVTFCEvents();
+    fetchVTCEvents();
   };
 
   const handleRSVP = async (eventId: string, isParticipating: boolean) => {
