@@ -466,23 +466,23 @@ export default function Events() {
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-semibold flex items-center gap-2">
                 <Globe size={20} className="text-primary" />
-                TruckersMP Community Events ({tmpEvents.length})
+                TruckersMP Community Events ({Array.isArray(tmpEvents) ? tmpEvents.length : 0})
               </h2>
             </div>
-            {tmpEvents.length === 0 ? (
-              <GlassCard className="p-8 text-center">
-                <Globe size={48} className="mx-auto text-muted-foreground mb-4" />
-                <p className="text-muted-foreground">
-                  {tmpLoading ? 'Loading events...' : 'No upcoming TMP events found'}
-                </p>
-              </GlassCard>
-            ) : (
-              <div className="grid gap-4">
-                {tmpEvents.map((event) => (
-                  <TMPEventCard key={event.id} event={event} getGameBadge={getGameBadge} />
-                ))}
-              </div>
-            )}
+{Array.isArray(tmpEvents) && tmpEvents.length > 0 ? (
+  <div className="grid gap-4">
+    {tmpEvents.map((event) => (
+      <TMPEventCard key={event.id} event={event} getGameBadge={getGameBadge} />
+    ))}
+  </div>
+) : (
+  <GlassCard className="p-8 text-center">
+    <Globe size={48} className="mx-auto text-muted-foreground mb-4" />
+    <p className="text-muted-foreground">
+      {tmpLoading ? 'Loading events...' : 'No upcoming TMP events found'}
+    </p>
+  </GlassCard>
+)}
           </TabsContent>
 
           {/* Servers Tab */}
