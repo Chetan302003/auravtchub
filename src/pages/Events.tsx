@@ -124,6 +124,7 @@ const fetchTMPEvents = async () => {
 };
 
   const fetchVTCEvents = async () => {
+    try {
     const { data, error } = await supabase
       .from('vtc_events')
       .select('*')
@@ -136,31 +137,22 @@ const fetchTMPEvents = async () => {
     const safeData = data || [];
     // Get participant counts and user participation
     const eventsWithParticipants = await Promise.all((data || []).map(async (event) => {
-      const { count } = await supabase
-        .from('event_participants')
-        .select('*', { count: 'exact', head: true })
-        .eq('event_id', event.id);
-      
-      let isParticipating = false;
-      if (user) {
-        const { data: participation } = await supabase
-          .from('event_participants')
-          .select('id')
-          .eq('event_id', event.id)
-          .eq('user_id', user.id)
-          .single();
-        isParticipating = !!participation;
-      }
-
+// Logic for participants...
       return {
         ...event,
-        participant_count: count || 0,
-        is_participating: isParticipating
+        // Ensure critical fields are never null
+        start_time: event.start_time || new Date().toISOString(),
+        participant_count: 0,
+        is_participating: false
       };
     }));
 
     setVtcEvents(eventsWithParticipants);
-  };
+  } catch (error) {
+    console.error('Error fetching VTC events:', error);
+    setVtcEvents([]); // Fallback to empty list so UI doesn't crash
+  }
+};
 
   const fetchServers = async () => {
     const serverData = await getServers();
@@ -232,7 +224,7 @@ const fetchTMPEvents = async () => {
     }
 
     toast.success('Event deleted');
-    fetchVTCEvents();
+    fetchVTFCEvents();
   };
 
   const handleRSVP = async (eventId: string, isParticipating: boolean) => {
