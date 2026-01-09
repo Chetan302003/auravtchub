@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { useFleetStats, usePersonalStats, useWeeklyData } from '@/hooks/useFleetStats';
+import { useEventReminders } from '@/hooks/useEventReminders';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { GlassCard, StatCard } from '@/components/layout/GlassCard';
+import { FeaturedEventsCarousel } from '@/components/events/FeaturedEventsCarousel';
 import { supabase } from '@/integrations/supabase/client';
 import { 
   Truck, 
@@ -57,6 +59,9 @@ export default function Dashboard() {
   const { stats: personalStats, loading: personalLoading } = usePersonalStats(user?.id);
   const { weeklyData, loading: weeklyLoading } = useWeeklyData();
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  
+  // Initialize event reminders
+  useEventReminders();
 
   useEffect(() => {
     const fetchAnnouncements = async () => {
@@ -201,6 +206,8 @@ export default function Dashboard() {
             subtitle="Approved members"
           />
         </div>
+        {/* Featured Events Carousel */}
+        <FeaturedEventsCarousel />
 
         {/* Charts Row */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
