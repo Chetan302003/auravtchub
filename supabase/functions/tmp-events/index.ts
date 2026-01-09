@@ -15,7 +15,7 @@ serve(async (req) => {
     console.log('[TMP API] Fetching upcoming events');
 
     // Fetch events from TruckersMP API
-    const response = await fetch('https://api.truckersmp.com/v2/events', {
+    const response = await fetch('https://api.truckersmp.com/v2/vtc/75200/events/attending', {
       headers: {
         'Accept': 'application/json',
         'User-Agent': 'AuraVTCHub/1.0',
