@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { z } from 'zod';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { 
   Truck, 
@@ -21,8 +22,11 @@ import {
   AlertTriangle,
   Calendar,
   Loader2,
-  CheckCircle
+  CheckCircle,
+  Zap,
+  Activity
 } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
 const jobSchema = z.object({
   origin_city: z.string().min(2, 'Origin city is required'),
@@ -40,10 +44,23 @@ const jobSchema = z.object({
 
 type JobForm = z.infer<typeof jobSchema>;
 
+interface TelemetryJobData {
+  origin_city: string;
+  destination_city: string;
+  distance_km: number;
+  cargo_type: string;
+  cargo_weight: number;
+  fuel_consumed: number;
+  income: number;
+  damage_percent: number;
+}
+
 export default function LogJob() {
   const [loading, setLoading] = useState(false);
+  const [telemetryFilled, setTelemetryFilled] = useState(false);
   const { user, isApproved } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const { toast } = useToast();
 
   const form = useForm<JobForm>({
@@ -62,6 +79,28 @@ export default function LogJob() {
       notes: '',
     },
   });
+
+  // Check for telemetry data passed from Telemetry page
+  useEffect(() => {
+    const telemetryData = location.state?.telemetryData as TelemetryJobData | undefined;
+    if (telemetryData) {
+      form.setValue('origin_city', telemetryData.origin_city || '');
+      form.setValue('destination_city', telemetryData.destination_city || '');
+      form.setValue('distance_km', telemetryData.distance_km || 0);
+      form.setValue('cargo_type', telemetryData.cargo_type || '');
+      form.setValue('cargo_weight', telemetryData.cargo_weight || 0);
+      form.setValue('fuel_consumed', telemetryData.fuel_consumed || 0);
+      form.setValue('income', telemetryData.income || 0);
+      form.setValue('damage_percent', telemetryData.damage_percent || 0);
+      setTelemetryFilled(true);
+      toast({
+        title: 'Telemetry Data Loaded',
+        description: 'Form has been filled with live telemetry data.',
+      });
+      // Clear the state to prevent re-filling on navigation
+      window.history.replaceState({}, document.title);
+    }
+  }, [location.state, form, toast]);
 
   const onSubmit = async (data: JobForm) => {
     if (!user) {
@@ -111,6 +150,7 @@ export default function LogJob() {
         description: 'Your delivery has been recorded successfully.',
       });
       form.reset();
+      setTelemetryFilled(false);
       navigate('/my-stats');
     }
 
@@ -138,10 +178,33 @@ export default function LogJob() {
     <AppLayout>
       <div className="max-w-3xl mx-auto space-y-8">
         {/* Header */}
-        <div>
-          <h1 className="text-3xl font-bold gradient-text">Log New Job</h1>
-          <p className="text-muted-foreground mt-1">Record your delivery details</p>
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold gradient-text">Log New Job</h1>
+            <p className="text-muted-foreground mt-1">Record your delivery details</p>
+          </div>
+          
+          {/* Telemetry Quick Action */}
+          <Link to="/telemetry">
+            <Button variant="outline" className="gap-2 rounded-full">
+              <Activity size={16} />
+              Auto-Fill from Telemetry
+            </Button>
+          </Link>
         </div>
+
+        {/* Telemetry Badge */}
+        {telemetryFilled && (
+          <div className="flex items-center gap-2 p-3 rounded-xl bg-primary/10 border border-primary/20">
+            <Zap size={18} className="text-primary" />
+            <span className="text-sm font-medium text-primary">
+              This form was auto-filled from live telemetry data
+            </span>
+            <Badge variant="outline" className="ml-auto bg-primary/20 text-primary border-primary/40">
+              Telemetry
+            </Badge>
+          </div>
+        )}
 
         <GlassCard>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
@@ -315,7 +378,10 @@ export default function LogJob() {
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => form.reset()}
+                onClick={() => {
+                  form.reset();
+                  setTelemetryFilled(false);
+                }}
                 className="flex-1 rounded-full"
               >
                 Clear Form
