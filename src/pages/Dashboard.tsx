@@ -3,7 +3,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useFleetStats, usePersonalStats, useWeeklyData } from '@/hooks/useFleetStats';
 import { useEventReminders } from '@/hooks/useEventReminders';
 import { AppLayout } from '@/components/layout/AppLayout';
-import { GlassCard, StatCard } from '@/components/layout/GlassCard';
+import { GlassCard, StatCard, MiniStat } from '@/components/layout/GlassCard';
 import { FeaturedEventsCarousel } from '@/components/events/FeaturedEventsCarousel';
 import { supabase } from '@/integrations/supabase/client';
 import { 
@@ -15,8 +15,10 @@ import {
   TrendingUp,
   Trophy,
   Package,
-  Bell,
-  Megaphone
+  Megaphone,
+  Activity,
+  Gauge,
+  Route
 } from 'lucide-react';
 import { 
   AreaChart, 
@@ -30,7 +32,8 @@ import {
   Bar,
   PieChart,
   Pie,
-  Cell
+  Cell,
+  Legend
 } from 'recharts';
 import { format } from 'date-fns';
 
@@ -43,14 +46,22 @@ interface Announcement {
   expires_at: string | null;
 }
 
-// Chart colors from design system
-const CHART_COLORS = [
-  'hsl(145, 85%, 45%)',   // Primary green
-  'hsl(200, 80%, 50%)',   // Blue
-  'hsl(280, 70%, 55%)',   // Purple
-  'hsl(45, 90%, 55%)',    // Gold
-  'hsl(350, 75%, 55%)',   // Red
-  'hsl(175, 70%, 45%)',   // Teal
+// Vibrant chart colors
+const CHART_COLORS = {
+  green: 'hsl(145, 90%, 45%)',
+  cyan: 'hsl(185, 85%, 50%)',
+  purple: 'hsl(280, 80%, 55%)',
+  amber: 'hsl(45, 95%, 55%)',
+  rose: 'hsl(350, 85%, 55%)',
+  blue: 'hsl(210, 90%, 55%)',
+};
+
+const PIE_COLORS = [
+  CHART_COLORS.green,
+  CHART_COLORS.cyan,
+  CHART_COLORS.purple,
+  CHART_COLORS.amber,
+  CHART_COLORS.rose,
 ];
 
 export default function Dashboard() {
@@ -60,7 +71,6 @@ export default function Dashboard() {
   const { weeklyData, loading: weeklyLoading } = useWeeklyData();
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   
-  // Initialize event reminders
   useEventReminders();
 
   useEffect(() => {
@@ -72,9 +82,7 @@ export default function Dashboard() {
         .order('created_at', { ascending: false })
         .limit(3);
       
-      if (data) {
-        setAnnouncements(data as Announcement[]);
-      }
+      if (data) setAnnouncements(data as Announcement[]);
     };
     fetchAnnouncements();
   }, []);
@@ -94,36 +102,52 @@ export default function Dashboard() {
     }).format(num);
   };
 
-  // Pie chart data for delivery distribution
   const pieData = leaderboard.slice(0, 5).map((driver, index) => ({
     name: driver.username,
     value: Number(driver.total_distance),
-    color: CHART_COLORS[index % CHART_COLORS.length],
+    color: PIE_COLORS[index % PIE_COLORS.length],
   }));
 
   const priorityColors = {
-    low: 'bg-muted/50 border-muted-foreground/30',
-    normal: 'bg-primary/10 border-primary/30',
-    high: 'bg-warning/20 border-warning/50',
-    urgent: 'bg-destructive/20 border-destructive/50',
+    low: 'border-l-4 border-l-muted-foreground/50',
+    normal: 'border-l-4 border-l-primary',
+    high: 'border-l-4 border-l-amber',
+    urgent: 'border-l-4 border-l-rose',
+  };
+
+  const CustomTooltip = ({ active, payload, label }: any) => {
+    if (active && payload && payload.length) {
+      return (
+        <div className="glass-card p-3 text-sm">
+          <p className="text-foreground font-medium mb-1">{label}</p>
+          {payload.map((entry: any, index: number) => (
+            <p key={index} style={{ color: entry.color }} className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full" style={{ background: entry.color }} />
+              {entry.name}: {entry.name === 'income' ? formatCurrency(entry.value) : `${formatNumber(entry.value)} km`}
+            </p>
+          ))}
+        </div>
+      );
+    }
+    return null;
   };
 
   return (
     <AppLayout>
-      <div className="space-y-8">
+      <div className="space-y-6 lg:space-y-8">
         {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-bold">
-              Welcome back, <span className="gradient-text">{profile?.username || 'Driver'}</span>
+            <h1 className="text-heading-1 font-bold">
+              Welcome, <span className="gradient-text">{profile?.username || 'Driver'}</span>
             </h1>
-            <p className="text-muted-foreground mt-1">
+            <p className="text-muted-foreground text-sm sm:text-base mt-1">
               {isApproved ? "Here's your fleet overview" : "Your account is pending approval"}
             </p>
           </div>
-          <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 text-primary text-sm">
-            <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
-            <span>Live Dashboard</span>
+          <div className="flex items-center gap-2 px-3 py-2 rounded-full bg-primary/10 text-primary text-sm w-fit">
+            <Activity size={14} className="animate-pulse" />
+            <span className="font-medium">Live Dashboard</span>
           </div>
         </div>
 
@@ -133,28 +157,28 @@ export default function Dashboard() {
             {announcements.map((announcement) => (
               <GlassCard 
                 key={announcement.id} 
-                className={`border ${priorityColors[announcement.priority]}`}
+                className={priorityColors[announcement.priority]}
               >
-                <div className="flex items-start gap-4">
-                  <div className={`p-2 rounded-full ${
-                    announcement.priority === 'urgent' ? 'bg-destructive/20 text-destructive' :
-                    announcement.priority === 'high' ? 'bg-warning/20 text-warning' :
-                    'bg-primary/20 text-primary'
+                <div className="flex items-start gap-3 sm:gap-4">
+                  <div className={`p-2 rounded-xl shrink-0 ${
+                    announcement.priority === 'urgent' ? 'icon-bg-rose' :
+                    announcement.priority === 'high' ? 'icon-bg-amber' :
+                    'icon-bg-green'
                   }`}>
-                    <Megaphone size={20} />
+                    <Megaphone size={18} />
                   </div>
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2">
-                      <h3 className="font-semibold">{announcement.title}</h3>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="font-semibold text-sm sm:text-base">{announcement.title}</h3>
                       {announcement.priority === 'urgent' && (
-                        <span className="px-2 py-0.5 rounded-full bg-destructive/20 text-destructive text-xs uppercase">
+                        <span className="px-2 py-0.5 rounded-full bg-rose/20 text-rose text-xs uppercase font-medium">
                           Urgent
                         </span>
                       )}
                     </div>
-                    <p className="text-muted-foreground text-sm mt-1">{announcement.content}</p>
+                    <p className="text-muted-foreground text-sm mt-1 line-clamp-2">{announcement.content}</p>
                     <p className="text-xs text-muted-foreground mt-2">
-                      {format(new Date(announcement.created_at), 'MMM dd, yyyy HH:mm')}
+                      {format(new Date(announcement.created_at), 'MMM dd, yyyy')}
                     </p>
                   </div>
                 </div>
@@ -164,83 +188,93 @@ export default function Dashboard() {
         )}
 
         {!isApproved && (
-          <GlassCard className="border-warning/50 bg-warning/5">
+          <GlassCard className="border-l-4 border-l-amber">
             <div className="flex items-center gap-4">
-              <div className="p-3 rounded-full bg-warning/20 text-warning">
+              <div className="p-3 rounded-xl icon-bg-amber shrink-0">
                 <Users size={24} />
               </div>
               <div>
-                <h3 className="font-semibold text-warning">Account Pending Approval</h3>
+                <h3 className="font-semibold text-amber">Account Pending Approval</h3>
                 <p className="text-muted-foreground text-sm">
-                  Your account is awaiting HR approval. Some features may be limited until approved.
+                  Your account is awaiting HR approval. Some features may be limited.
                 </p>
               </div>
             </div>
           </GlassCard>
         )}
 
-        {/* Fleet Stats Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Fleet Stats Grid - Colorful */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
           <StatCard
-            title="Total Fleet Distance"
+            title="Fleet Distance"
             value={stats ? `${formatNumber(stats.total_distance)} km` : '0 km'}
-            icon={<MapPin size={24} />}
-            subtitle="All drivers combined"
+            icon={<MapPin size={20} className="sm:w-6 sm:h-6" />}
+            subtitle="All drivers"
+            color="green"
           />
           <StatCard
-            title="Total Deliveries"
+            title="Deliveries"
             value={stats ? formatNumber(stats.total_deliveries) : '0'}
-            icon={<Package size={24} />}
-            subtitle="Completed jobs"
+            icon={<Package size={20} className="sm:w-6 sm:h-6" />}
+            subtitle="Completed"
+            color="cyan"
           />
           <StatCard
-            title="Fleet Revenue"
+            title="Revenue"
             value={stats ? formatCurrency(stats.total_income) : '$0'}
-            icon={<DollarSign size={24} />}
+            icon={<DollarSign size={20} className="sm:w-6 sm:h-6" />}
             subtitle="Total earnings"
+            color="amber"
           />
           <StatCard
             title="Active Drivers"
             value={stats?.active_drivers || '0'}
-            icon={<Users size={24} />}
-            subtitle="Approved members"
+            icon={<Users size={20} className="sm:w-6 sm:h-6" />}
+            subtitle="Approved"
+            color="purple"
           />
         </div>
-        {/* Featured Events Carousel */}
+
+        {/* Featured Events */}
         <FeaturedEventsCarousel />
 
         {/* Charts Row */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Distance Chart */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6">
+          {/* Distance Chart - Green to Cyan gradient */}
           <GlassCard>
-            <h3 className="text-lg font-semibold mb-4">Weekly Distance Trend</h3>
-            <div className="h-64">
+            <h3 className="text-base sm:text-lg font-semibold mb-4 flex items-center gap-2">
+              <Route size={18} className="text-primary" />
+              Weekly Distance
+            </h3>
+            <div className="h-56 sm:h-64 lg:h-72">
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={weeklyData}>
                   <defs>
                     <linearGradient id="distanceGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="hsl(145, 85%, 45%)" stopOpacity={0.4} />
-                      <stop offset="95%" stopColor="hsl(145, 85%, 45%)" stopOpacity={0} />
+                      <stop offset="0%" stopColor={CHART_COLORS.green} stopOpacity={0.5} />
+                      <stop offset="100%" stopColor={CHART_COLORS.cyan} stopOpacity={0.05} />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(150, 30%, 20%)" />
-                  <XAxis dataKey="day" stroke="hsl(0, 0%, 60%)" fontSize={12} />
-                  <YAxis stroke="hsl(0, 0%, 60%)" fontSize={12} />
-                  <Tooltip 
-                    contentStyle={{ 
-                      backgroundColor: 'hsl(220, 15%, 10%)', 
-                      border: '1px solid hsl(145, 40%, 25%)',
-                      borderRadius: '12px',
-                      boxShadow: '0 0 20px hsl(145, 85%, 45%, 0.2)'
-                    }}
-                    labelStyle={{ color: 'hsl(150, 80%, 90%)' }}
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(220, 15%, 15%)" />
+                  <XAxis 
+                    dataKey="day" 
+                    stroke="hsl(220, 10%, 45%)" 
+                    fontSize={11}
+                    tickLine={false}
                   />
+                  <YAxis 
+                    stroke="hsl(220, 10%, 45%)" 
+                    fontSize={11}
+                    tickLine={false}
+                    axisLine={false}
+                  />
+                  <Tooltip content={<CustomTooltip />} />
                   <Area 
                     type="monotone" 
-                    dataKey="distance" 
-                    stroke="hsl(145, 85%, 50%)" 
-                    strokeWidth={3}
-                    fillOpacity={1} 
+                    dataKey="distance"
+                    name="distance" 
+                    stroke={CHART_COLORS.green}
+                    strokeWidth={2.5}
                     fill="url(#distanceGradient)" 
                   />
                 </AreaChart>
@@ -248,33 +282,38 @@ export default function Dashboard() {
             </div>
           </GlassCard>
 
-          {/* Income Chart - Colorful Bars */}
+          {/* Income Chart - Multi-color bars */}
           <GlassCard>
-            <h3 className="text-lg font-semibold mb-4">Weekly Revenue</h3>
-            <div className="h-64">
+            <h3 className="text-base sm:text-lg font-semibold mb-4 flex items-center gap-2">
+              <DollarSign size={18} className="text-amber" />
+              Weekly Revenue
+            </h3>
+            <div className="h-56 sm:h-64 lg:h-72">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={weeklyData}>
                   <defs>
                     <linearGradient id="incomeGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="hsl(200, 80%, 55%)" />
-                      <stop offset="100%" stopColor="hsl(145, 85%, 45%)" />
+                      <stop offset="0%" stopColor={CHART_COLORS.amber} />
+                      <stop offset="100%" stopColor={CHART_COLORS.rose} />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(150, 30%, 20%)" />
-                  <XAxis dataKey="day" stroke="hsl(0, 0%, 60%)" fontSize={12} />
-                  <YAxis stroke="hsl(0, 0%, 60%)" fontSize={12} />
-                  <Tooltip 
-                    contentStyle={{ 
-                      backgroundColor: 'hsl(220, 15%, 10%)', 
-                      border: '1px solid hsl(145, 40%, 25%)',
-                      borderRadius: '12px',
-                      boxShadow: '0 0 20px hsl(145, 85%, 45%, 0.2)'
-                    }}
-                    formatter={(value: number) => [formatCurrency(value), 'Revenue']}
-                    labelStyle={{ color: 'hsl(150, 80%, 90%)' }}
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(220, 15%, 15%)" />
+                  <XAxis 
+                    dataKey="day" 
+                    stroke="hsl(220, 10%, 45%)" 
+                    fontSize={11}
+                    tickLine={false}
                   />
+                  <YAxis 
+                    stroke="hsl(220, 10%, 45%)" 
+                    fontSize={11}
+                    tickLine={false}
+                    axisLine={false}
+                  />
+                  <Tooltip content={<CustomTooltip />} />
                   <Bar 
-                    dataKey="income" 
+                    dataKey="income"
+                    name="income" 
                     fill="url(#incomeGradient)" 
                     radius={[6, 6, 0, 0]}
                   />
@@ -285,86 +324,86 @@ export default function Dashboard() {
         </div>
 
         {/* Personal Stats & Leaderboard */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6">
           {/* Personal Quick Stats */}
-          <GlassCard className="lg:col-span-1">
-            <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-              <TrendingUp size={20} className="text-primary" />
+          <GlassCard>
+            <h3 className="text-base sm:text-lg font-semibold mb-4 flex items-center gap-2">
+              <TrendingUp size={18} className="text-cyan" />
               Your Stats
             </h3>
-            <div className="space-y-4">
-              <div className="flex justify-between items-center p-3 rounded-xl bg-muted/30">
-                <span className="text-muted-foreground">Total Distance</span>
-                <span className="font-bold text-primary">
-                  {personalStats ? `${formatNumber(personalStats.total_distance)} km` : '0 km'}
-                </span>
-              </div>
-              <div className="flex justify-between items-center p-3 rounded-xl bg-muted/30">
-                <span className="text-muted-foreground">Deliveries</span>
-                <span className="font-bold text-primary">
-                  {personalStats?.total_deliveries || 0}
-                </span>
-              </div>
-              <div className="flex justify-between items-center p-3 rounded-xl bg-muted/30">
-                <span className="text-muted-foreground">Total Earnings</span>
-                <span className="font-bold text-primary">
-                  {personalStats ? formatCurrency(personalStats.total_income) : '$0'}
-                </span>
-              </div>
-              <div className="flex justify-between items-center p-3 rounded-xl bg-muted/30">
-                <span className="text-muted-foreground">Avg Damage</span>
-                <span className="font-bold text-primary">
-                  {personalStats ? `${personalStats.avg_damage.toFixed(1)}%` : '0%'}
-                </span>
-              </div>
+            <div className="grid grid-cols-2 gap-3">
+              <MiniStat
+                label="Distance"
+                value={personalStats ? `${formatNumber(personalStats.total_distance)}` : '0'}
+                icon={<MapPin size={16} />}
+                color="green"
+              />
+              <MiniStat
+                label="Deliveries"
+                value={personalStats?.total_deliveries || 0}
+                icon={<Package size={16} />}
+                color="cyan"
+              />
+              <MiniStat
+                label="Earnings"
+                value={personalStats ? `$${formatNumber(personalStats.total_income)}` : '$0'}
+                icon={<DollarSign size={16} />}
+                color="amber"
+              />
+              <MiniStat
+                label="Avg Damage"
+                value={personalStats ? `${personalStats.avg_damage.toFixed(1)}%` : '0%'}
+                icon={<Gauge size={16} />}
+                color="rose"
+              />
             </div>
           </GlassCard>
 
           {/* Leaderboard */}
           <GlassCard className="lg:col-span-2">
-            <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-              <Trophy size={20} className="text-primary" />
-              Top 10 Drivers
+            <h3 className="text-base sm:text-lg font-semibold mb-4 flex items-center gap-2">
+              <Trophy size={18} className="text-amber" />
+              Top Drivers
             </h3>
-            <div className="space-y-2">
+            <div className="space-y-2 max-h-80 overflow-y-auto">
               {leaderboard.length === 0 ? (
-                <p className="text-muted-foreground text-center py-8">No data yet. Start logging jobs!</p>
+                <p className="text-muted-foreground text-center py-8 text-sm">No data yet. Start logging jobs!</p>
               ) : (
                 leaderboard.map((driver, index) => (
                   <div 
                     key={driver.user_id}
-                    className="flex items-center gap-4 p-3 rounded-xl bg-muted/20 hover:bg-muted/30 transition-colors"
+                    className="flex items-center gap-3 p-2.5 sm:p-3 rounded-xl bg-secondary/50 hover:bg-secondary/70 transition-colors"
                   >
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${
-                      index === 0 ? 'bg-yellow-500/20 text-yellow-500' :
+                    <div className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center font-bold text-xs sm:text-sm shrink-0 ${
+                      index === 0 ? 'bg-amber/20 text-amber' :
                       index === 1 ? 'bg-gray-400/20 text-gray-400' :
-                      index === 2 ? 'bg-orange-500/20 text-orange-500' :
+                      index === 2 ? 'bg-orange-500/20 text-orange-400' :
                       'bg-muted text-muted-foreground'
                     }`}>
                       {index + 1}
                     </div>
-                    {driver.avatar_url ? (
-                      <img 
-                        src={driver.avatar_url} 
-                        alt={driver.username}
-                        className="w-10 h-10 rounded-full object-cover"
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).style.display = 'none';
-                          (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden');
-                        }}
-                      />
-                    ) : null}
-                    <div className={`w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center text-primary font-semibold ${driver.avatar_url ? 'hidden' : ''}`}>
-                      {driver.username?.charAt(0).toUpperCase() || '?'}
+                    
+                    <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-primary/20 flex items-center justify-center text-primary font-semibold overflow-hidden shrink-0">
+                      {driver.avatar_url ? (
+                        <img 
+                          src={driver.avatar_url} 
+                          alt={driver.username}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        driver.username?.charAt(0).toUpperCase() || '?'
+                      )}
                     </div>
+                    
                     <div className="flex-1 min-w-0">
-                      <p className="font-medium truncate">{driver.username}</p>
+                      <p className="font-medium text-sm truncate">{driver.username}</p>
                       <p className="text-xs text-muted-foreground">
                         {driver.total_deliveries} deliveries
                       </p>
                     </div>
-                    <div className="text-right">
-                      <p className="font-bold text-primary">{formatNumber(Number(driver.total_distance))} km</p>
+                    
+                    <div className="text-right shrink-0">
+                      <p className="font-bold text-primary text-sm">{formatNumber(Number(driver.total_distance))} km</p>
                       <p className="text-xs text-muted-foreground">{formatCurrency(Number(driver.total_earnings))}</p>
                     </div>
                   </div>
@@ -374,32 +413,44 @@ export default function Dashboard() {
           </GlassCard>
         </div>
 
-        {/* Fleet Summary Footer */}
+        {/* Fleet Summary - Colorful grid */}
         <GlassCard>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
-            <div>
-              <p className="text-muted-foreground text-sm">Total Fuel Used</p>
-              <p className="text-2xl font-bold gradient-text">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 sm:gap-6">
+            <div className="text-center">
+              <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl mx-auto mb-2 icon-bg-cyan flex items-center justify-center">
+                <Fuel size={20} />
+              </div>
+              <p className="text-lg sm:text-xl lg:text-2xl font-bold text-cyan">
                 {stats ? `${formatNumber(stats.total_fuel)} L` : '0 L'}
               </p>
+              <p className="text-muted-foreground text-xs sm:text-sm">Fuel Used</p>
             </div>
-            <div>
-              <p className="text-muted-foreground text-sm">Total Expenses</p>
-              <p className="text-2xl font-bold text-destructive">
+            <div className="text-center">
+              <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl mx-auto mb-2 icon-bg-rose flex items-center justify-center">
+                <DollarSign size={20} />
+              </div>
+              <p className="text-lg sm:text-xl lg:text-2xl font-bold text-rose">
                 {stats ? formatCurrency(stats.total_expenses) : '$0'}
               </p>
+              <p className="text-muted-foreground text-xs sm:text-sm">Expenses</p>
             </div>
-            <div>
-              <p className="text-muted-foreground text-sm">Net Profit</p>
-              <p className="text-2xl font-bold gradient-text">
+            <div className="text-center">
+              <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl mx-auto mb-2 icon-bg-green flex items-center justify-center">
+                <TrendingUp size={20} />
+              </div>
+              <p className="text-lg sm:text-xl lg:text-2xl font-bold gradient-text">
                 {stats ? formatCurrency(stats.total_profit) : '$0'}
               </p>
+              <p className="text-muted-foreground text-xs sm:text-sm">Net Profit</p>
             </div>
-            <div>
-              <p className="text-muted-foreground text-sm">Avg Load Weight</p>
-              <p className="text-2xl font-bold gradient-text">
+            <div className="text-center">
+              <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl mx-auto mb-2 icon-bg-purple flex items-center justify-center">
+                <Truck size={20} />
+              </div>
+              <p className="text-lg sm:text-xl lg:text-2xl font-bold text-purple">
                 {stats ? `${formatNumber(stats.avg_load_weight)} t` : '0 t'}
               </p>
+              <p className="text-muted-foreground text-xs sm:text-sm">Avg Weight</p>
             </div>
           </div>
         </GlassCard>

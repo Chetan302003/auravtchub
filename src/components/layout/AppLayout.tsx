@@ -48,14 +48,17 @@ export function AppLayout({ children }: AppLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
 
+  // Close sidebar on route change (mobile)
+  useEffect(() => {
+    setSidebarOpen(false);
+  }, [location.pathname]);
+
   // Fetch TMP avatar if tmp_id exists
   useEffect(() => {
     const loadAvatar = async () => {
       if (profile?.tmp_id) {
         const avatar = await fetchPlayerAvatar(profile.tmp_id);
-        if (avatar) {
-          setAvatarUrl(avatar);
-        }
+        if (avatar) setAvatarUrl(avatar);
       } else if (profile?.avatar_url) {
         setAvatarUrl(profile.avatar_url);
       }
@@ -75,33 +78,34 @@ export function AppLayout({ children }: AppLayoutProps) {
 
   return (
     <div className="min-h-screen bg-background flex">
-      {/* Mobile menu button */}
+      {/* Mobile menu button - Fixed position */}
       <button
         onClick={() => setSidebarOpen(!sidebarOpen)}
-        className="lg:hidden fixed top-4 left-4 z-50 p-2 rounded-full bg-primary/10 text-primary neon-glow"
+        className="lg:hidden fixed top-4 left-4 z-50 p-2.5 rounded-xl bg-secondary/90 backdrop-blur-lg text-foreground shadow-lg border border-border/50"
+        aria-label="Toggle menu"
       >
-        {sidebarOpen ? <X size={24} /> : <Menu size={24} />}
+        {sidebarOpen ? <X size={22} /> : <Menu size={22} />}
       </button>
 
       {/* Sidebar */}
       <aside className={cn(
-        "fixed inset-y-0 left-0 z-40 w-72 transform transition-transform duration-300 ease-in-out lg:translate-x-0",
+        "fixed inset-y-0 left-0 z-40 w-64 sm:w-72 transform transition-transform duration-300 ease-out lg:translate-x-0",
         sidebarOpen ? "translate-x-0" : "-translate-x-full",
-        "glass-card rounded-none border-r border-border/30"
+        "bg-sidebar border-r border-border/50 flex flex-col"
       )}>
-        <div className="flex flex-col h-full p-6">
-          {/* Logo */}
-          <div className="mb-8 pt-2">
-            <h1 className="text-2xl font-bold gradient-text neon-text">
-              Aura VTC Hub
-            </h1>
-            <p className="text-muted-foreground text-sm mt-1">Fleet Management</p>
-          </div>
+        {/* Logo */}
+        <div className="p-4 sm:p-6 pt-16 lg:pt-6">
+          <h1 className="text-xl sm:text-2xl font-bold gradient-text neon-text">
+            Aura VTC Hub
+          </h1>
+          <p className="text-muted-foreground text-xs sm:text-sm mt-1">Fleet Management</p>
+        </div>
 
-          {/* User info - Fixed minimum height to prevent shrinking */}
-          <div className="glass-card p-4 mb-6 min-h-[100px]">
+        {/* User info */}
+        <div className="px-3 sm:px-4 mb-4">
+          <div className="glass-card p-3 sm:p-4">
             <div className="flex items-center gap-3">
-              <div className="w-12 h-12 shrink-0 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold text-lg neon-pulse overflow-hidden">
+              <div className="w-10 h-10 sm:w-12 sm:h-12 shrink-0 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold text-base sm:text-lg neon-pulse overflow-hidden">
                 {avatarUrl ? (
                   <img 
                     src={avatarUrl} 
@@ -113,52 +117,53 @@ export function AppLayout({ children }: AppLayoutProps) {
                   profile?.username?.charAt(0).toUpperCase() || 'U'
                 )}
               </div>
-              <div className="flex-1 min-w-0 overflow-hidden">
-                <p className="font-semibold truncate">{profile?.username || 'User'}</p>
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold text-sm sm:text-base truncate">{profile?.username || 'User'}</p>
                 <p className="text-xs text-muted-foreground truncate">
                   {roles[0]?.replace('_', ' ').toUpperCase() || 'Driver'}
                 </p>
               </div>
             </div>
             {!isApproved && (
-              <div className="mt-3 px-2 py-1 rounded-full bg-warning/20 text-warning text-xs text-center">
+              <div className="mt-3 px-2 py-1 rounded-full bg-amber/20 text-amber text-xs text-center font-medium">
                 Pending Approval
               </div>
             )}
           </div>
+        </div>
 
-          {/* Navigation */}
-          <nav className="flex-1 space-y-2 overflow-y-auto">
-            {filteredNavItems.map((item) => {
-              const isActive = location.pathname === item.path;
-              return (
-                <Link
-                  key={item.path}
-                  to={item.path}
-                  onClick={() => setSidebarOpen(false)}
-                  className={cn(
-                    "flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200",
-                    isActive 
-                      ? "bg-primary/20 text-primary neon-glow" 
-                      : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
-                  )}
-                >
-                  <item.icon size={20} className="shrink-0" />
-                  <span className="font-medium truncate">{item.label}</span>
-                  {isActive && <ChevronRight size={16} className="ml-auto shrink-0" />}
-                </Link>
-              );
-            })}
-          </nav>
+        {/* Navigation */}
+        <nav className="flex-1 px-3 sm:px-4 space-y-1 overflow-y-auto pb-4">
+          {filteredNavItems.map((item) => {
+            const isActive = location.pathname === item.path;
+            return (
+              <Link
+                key={item.path}
+                to={item.path}
+                className={cn(
+                  "flex items-center gap-3 px-3 sm:px-4 py-2.5 sm:py-3 rounded-xl transition-all duration-200",
+                  isActive 
+                    ? "bg-primary/15 text-primary neon-glow" 
+                    : "text-muted-foreground hover:bg-secondary hover:text-foreground"
+                )}
+              >
+                <item.icon size={18} className="shrink-0" />
+                <span className="font-medium text-sm truncate">{item.label}</span>
+                {isActive && <ChevronRight size={14} className="ml-auto shrink-0" />}
+              </Link>
+            );
+          })}
+        </nav>
 
-          {/* Sign out button */}
+        {/* Sign out button */}
+        <div className="p-3 sm:p-4 border-t border-border/50">
           <Button
             variant="ghost"
             onClick={handleSignOut}
-            className="mt-4 w-full justify-start gap-3 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+            className="w-full justify-start gap-3 text-muted-foreground hover:text-destructive hover:bg-destructive/10 h-11"
           >
-            <LogOut size={20} />
-            <span>Sign Out</span>
+            <LogOut size={18} />
+            <span className="text-sm">Sign Out</span>
           </Button>
         </div>
       </aside>
@@ -166,14 +171,14 @@ export function AppLayout({ children }: AppLayoutProps) {
       {/* Overlay for mobile */}
       {sidebarOpen && (
         <div 
-          className="fixed inset-0 bg-black/50 z-30 lg:hidden"
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-30 lg:hidden"
           onClick={() => setSidebarOpen(false)}
         />
       )}
 
       {/* Main content */}
-      <main className="flex-1 lg:ml-72 p-6 lg:p-8">
-        <div className="max-w-7xl mx-auto">
+      <main className="flex-1 lg:ml-72 min-h-screen">
+        <div className="p-4 sm:p-6 lg:p-8 pt-16 lg:pt-8 max-w-7xl mx-auto">
           {children}
         </div>
       </main>
