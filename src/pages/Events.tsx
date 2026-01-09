@@ -105,10 +105,23 @@ export default function Events() {
     setLoading(false);
   };
 
-  const fetchTMPEvents = async () => {
+const fetchTMPEvents = async () => {
+  try {
     const events = await getEvents();
-    setTmpEvents(events);
-  };
+    // Ensure we are always setting an array
+    if (Array.isArray(events)) {
+      setTmpEvents(events);
+    } else if (events && typeof events === 'object' && 'response' in events) {
+      // Fallback if the API still sends the object
+      setTmpEvents((events as any).response || []);
+    } else {
+      setTmpEvents([]);
+    }
+  } catch (err) {
+    console.error("TMP Fetch Error:", err);
+    setTmpEvents([]);
+  }
+};
 
   const fetchVTCEvents = async () => {
     const { data, error } = await supabase
