@@ -34,9 +34,9 @@ serve(async (req) => {
     console.log(`[TMP API] Fetched ${data.response?.length || 0} events`);
     const eventsArray = Array.isArray(data.response) ? data.response : [];
     return new Response(
-      JSON.stringify(data),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
+    JSON.stringify(eventsArray), // Changed from 'data' to 'eventsArray'
+    { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+   );
   } catch (error: unknown) {
     console.error('[TMP API] Error:', error);
     const message = error instanceof Error ? error.message : 'Unknown error';
