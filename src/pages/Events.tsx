@@ -285,11 +285,17 @@ const fetchTMPEvents = async () => {
   };
 
   const openEditDialog = (event: VTCEvent) => {
-    const safeSlice = (val: any) => {
+    // 1. Create a helper that handles ANY data type safely
+  const formatForInput = (val: any) => {
+    if (!val) return ''; 
+    const str = String(val); // Force to string (handles Date objects or Numbers)
+    return str.length >= 16 ? str.slice(0, 16) : str; // Only slice if long enough
+  };
+    {/*const safeSlice = (val: any) => {
     if (!val) return '';
     const str = String(val); // Force it to be a string
     return str.includes('T') ? str.slice(0, 16) : str;
-  };
+  };*/}
     setFormData({
       title: event.title,
       description: event.description || '',
@@ -299,8 +305,8 @@ const fetchTMPEvents = async () => {
       departure_location: event.departure_location || '',
       arrival_city: event.arrival_city,
       arrival_location: event.arrival_location || '',
-      start_time: safeSlice(event.start_time),
-      meetup_time: safeSlice(event.meetup_time),
+      start_time: formatForInput(event.start_time),
+      meetup_time: formatForInput(event.meetup_time),
       server_name: event.server_name || '',
       max_participants: event.max_participants?.toString() || '',
       banner_url: event.banner_url || '',
