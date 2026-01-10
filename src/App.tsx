@@ -3,22 +3,24 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import { AuthProvider, useAuth } from "@/hooks/useAuth";
 
 // Pages
+import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
 import FleetOverview from "./pages/FleetOverview";
 import MyStats from "./pages/MyStats";
 import LogJob from "./pages/LogJob";
+import Settings from "./pages/Settings";
+import NotFound from "./pages/NotFound";
 import UserManagement from "./pages/UserManagement";
 import SystemLogs from "./pages/SystemLogs";
 import DeveloperPanel from "./pages/DeveloperPanel";
 import Announcements from "./pages/Announcements";
 import Events from "./pages/Events";
 import Telemetry from "./pages/Telemetry";
-import Settings from "./pages/Settings";
-import NotFound from "./pages/NotFound";
+
+import { AuthProvider, useAuth } from "@/hooks/useAuth";
 
 const queryClient = new QueryClient();
 
