@@ -10,91 +10,110 @@
  * Optimized for low memory footprint overlay mode
  */
 
+// Extend Window interface for Tauri
+declare global {
+  interface Window {
+    __TAURI__?: {
+      window: {
+        appWindow: {
+          setAlwaysOnTop: (onTop: boolean) => Promise<void>;
+          minimize: () => Promise<void>;
+          toggleMaximize: () => Promise<void>;
+          close: () => Promise<void>;
+          setSize: (size: { type: string; width: number; height: number }) => Promise<void>;
+          setPosition: (pos: { type: string; x: number; y: number }) => Promise<void>;
+          startDragging: () => Promise<void>;
+          setDecorations: (decorations: boolean) => Promise<void>;
+          center: () => Promise<void>;
+        };
+        LogicalSize: new (width: number, height: number) => { type: string; width: number; height: number };
+        LogicalPosition: new (x: number, y: number) => { type: string; x: number; y: number };
+      };
+      notification: {
+        isPermissionGranted: () => Promise<boolean>;
+        requestPermission: () => Promise<string>;
+        sendNotification: (options: { title: string; body: string }) => void;
+      };
+      shell: {
+        open: (url: string) => Promise<void>;
+      };
+      fs: {
+        createDir: (path: string, options: { dir: number; recursive: boolean }) => Promise<void>;
+        writeTextFile: (path: string, content: string, options: { dir: number }) => Promise<void>;
+        readTextFile: (path: string, options: { dir: number }) => Promise<string>;
+        BaseDirectory: { AppData: number };
+      };
+    };
+  }
+}
+
 // Check if running in Tauri
 export const isTauri = (): boolean => {
-  return typeof window !== 'undefined' && '__TAURI__' in window;
+  return typeof window !== 'undefined' && '__TAURI__' in window && window.__TAURI__ !== undefined;
 };
 
-// Lazy import Tauri APIs to avoid errors in browser
-const getTauriWindow = async () => {
+// Get Tauri APIs safely
+const getTauriWindow = () => {
   if (!isTauri()) return null;
-  try {
-    // @ts-ignore - Tauri API available at runtime
-    return await import('@tauri-apps/api/window');
-  } catch {
-    return null;
-  }
+  return window.__TAURI__?.window ?? null;
 };
 
-const getTauriNotification = async () => {
+const getTauriNotification = () => {
   if (!isTauri()) return null;
-  try {
-    // @ts-ignore - Tauri API available at runtime
-    return await import('@tauri-apps/api/notification');
-  } catch {
-    return null;
-  }
+  return window.__TAURI__?.notification ?? null;
 };
 
-const getTauriShell = async () => {
+const getTauriShell = () => {
   if (!isTauri()) return null;
-  try {
-    // @ts-ignore - Tauri API available at runtime
-    return await import('@tauri-apps/api/shell');
-  } catch {
-    return null;
-  }
+  return window.__TAURI__?.shell ?? null;
 };
 
-const getTauriFs = async () => {
+const getTauriFs = () => {
   if (!isTauri()) return null;
-  try {
-    // @ts-ignore - Tauri API available at runtime
-    return await import('@tauri-apps/api/fs');
-  } catch {
-    return null;
-  }
+  return window.__TAURI__?.fs ?? null;
 };
 
 // Window controls
 export const setAlwaysOnTop = async (onTop: boolean): Promise<void> => {
-  const windowApi = await getTauriWindow();
+  const windowApi = getTauriWindow();
   if (!windowApi) return;
   await windowApi.appWindow.setAlwaysOnTop(onTop);
 };
 
 export const minimizeWindow = async (): Promise<void> => {
-  const windowApi = await getTauriWindow();
+  const windowApi = getTauriWindow();
   if (!windowApi) return;
   await windowApi.appWindow.minimize();
 };
 
 export const maximizeWindow = async (): Promise<void> => {
-  const windowApi = await getTauriWindow();
+  const windowApi = getTauriWindow();
   if (!windowApi) return;
   await windowApi.appWindow.toggleMaximize();
 };
 
 export const closeWindow = async (): Promise<void> => {
-  const windowApi = await getTauriWindow();
+  const windowApi = getTauriWindow();
   if (!windowApi) return;
   await windowApi.appWindow.close();
 };
 
 export const setWindowSize = async (width: number, height: number): Promise<void> => {
-  const windowApi = await getTauriWindow();
+  const windowApi = getTauriWindow();
   if (!windowApi) return;
-  await windowApi.appWindow.setSize(new windowApi.LogicalSize(width, height));
+  const size = new windowApi.LogicalSize(width, height);
+  await windowApi.appWindow.setSize(size);
 };
 
 export const setWindowPosition = async (x: number, y: number): Promise<void> => {
-  const windowApi = await getTauriWindow();
+  const windowApi = getTauriWindow();
   if (!windowApi) return;
-  await windowApi.appWindow.setPosition(new windowApi.LogicalPosition(x, y));
+  const pos = new windowApi.LogicalPosition(x, y);
+  await windowApi.appWindow.setPosition(pos);
 };
 
 export const startDragging = async (): Promise<void> => {
-  const windowApi = await getTauriWindow();
+  const windowApi = getTauriWindow();
   if (!windowApi) return;
   await windowApi.appWindow.startDragging();
 };
@@ -104,7 +123,7 @@ export const sendNativeNotification = async (
   title: string, 
   body: string
 ): Promise<void> => {
-  const notificationApi = await getTauriNotification();
+  const notificationApi = getTauriNotification();
   
   if (!notificationApi) {
     // Fallback to browser notification
@@ -127,7 +146,7 @@ export const sendNativeNotification = async (
 
 // Open external URL in default browser
 export const openExternal = async (url: string): Promise<void> => {
-  const shellApi = await getTauriShell();
+  const shellApi = getTauriShell();
   
   if (!shellApi) {
     window.open(url, '_blank', 'noopener,noreferrer');
@@ -142,7 +161,7 @@ export const saveToAppData = async (
   filename: string, 
   content: string
 ): Promise<void> => {
-  const fsApi = await getTauriFs();
+  const fsApi = getTauriFs();
   
   if (!fsApi) {
     localStorage.setItem(`aura-${filename}`, content);
@@ -160,7 +179,7 @@ export const saveToAppData = async (
 };
 
 export const loadFromAppData = async (filename: string): Promise<string | null> => {
-  const fsApi = await getTauriFs();
+  const fsApi = getTauriFs();
   
   if (!fsApi) {
     return localStorage.getItem(`aura-${filename}`);
@@ -175,7 +194,7 @@ export const loadFromAppData = async (filename: string): Promise<string | null> 
 
 // Overlay mode presets
 export const setOverlayMode = async (enabled: boolean): Promise<void> => {
-  const windowApi = await getTauriWindow();
+  const windowApi = getTauriWindow();
   if (!windowApi) return;
   
   if (enabled) {
