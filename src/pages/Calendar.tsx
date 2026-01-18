@@ -4,10 +4,14 @@ import { GlassCard } from '@/components/layout/GlassCard';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Calendar as CalendarComponent } from '@/components/ui/calendar';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
 import { useTruckersMP, TMPEvent } from '@/hooks/useTruckersMP';
+import { useEventReminders, CalendarEvent as ReminderEvent } from '@/hooks/useEventReminders';
+import { useUIStore } from '@/stores/appStore';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { format, parseISO, isSameDay, startOfMonth, endOfMonth, eachDayOfInterval, isWithinInterval } from 'date-fns';
+import { format, parseISO, isSameDay } from 'date-fns';
 import {
   Calendar,
   Download,
@@ -19,7 +23,10 @@ import {
   Users,
   ChevronLeft,
   ChevronRight,
-  ExternalLink
+  ExternalLink,
+  Bell,
+  BellOff,
+  BellRing
 } from 'lucide-react';
 
 interface VTCEvent {
@@ -54,6 +61,9 @@ interface CalendarEvent {
 
 export default function CalendarPage() {
   const { getEvents, loading: tmpLoading } = useTruckersMP();
+  const { hasReminder, toggleReminder, reminderEvents, permission, requestPermission } = useEventReminders();
+  const notificationsEnabled = useUIStore((s) => s.notificationsEnabled);
+  const setNotificationsEnabled = useUIStore((s) => s.setNotificationsEnabled);
   
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [currentMonth, setCurrentMonth] = useState<Date>(new Date());
@@ -276,8 +286,8 @@ export default function CalendarPage() {
           </div>
         </div>
 
-        {/* Stats */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {/* Stats + Notification Settings */}
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
           <GlassCard className="p-4 text-center">
             <div className="text-2xl font-bold text-primary">{calendarEvents.length}</div>
             <div className="text-sm text-muted-foreground">Total Events</div>
@@ -291,8 +301,34 @@ export default function CalendarPage() {
             <div className="text-sm text-muted-foreground">VTC Events</div>
           </GlassCard>
           <GlassCard className="p-4 text-center">
-            <div className="text-2xl font-bold text-green-400">{selectedDateEvents.length}</div>
-            <div className="text-sm text-muted-foreground">Selected Date</div>
+            <div className="text-2xl font-bold text-amber-400">{reminderEvents.length}</div>
+            <div className="text-sm text-muted-foreground">Reminders Set</div>
+          </GlassCard>
+          <GlassCard className="p-4">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <BellRing size={18} className={notificationsEnabled ? 'text-primary' : 'text-muted-foreground'} />
+                <Label htmlFor="notifications" className="text-sm cursor-pointer">
+                  Notifications
+                </Label>
+              </div>
+              <Switch
+                id="notifications"
+                checked={notificationsEnabled}
+                onCheckedChange={(checked) => {
+                  setNotificationsEnabled(checked);
+                  if (checked) {
+                    requestPermission();
+                    toast.success('Notifications enabled');
+                  } else {
+                    toast.info('Notifications disabled');
+                  }
+                }}
+              />
+            </div>
+            <div className="text-xs text-muted-foreground mt-1">
+              {permission === 'granted' ? '✓ Browser allowed' : permission === 'denied' ? '✗ Browser blocked' : 'Click to enable'}
+            </div>
           </GlassCard>
         </div>
 
@@ -411,17 +447,36 @@ export default function CalendarPage() {
                             )}
                           </div>
                         </div>
-                        {event.url && (
+                        <div className="flex flex-col gap-2">
                           <Button
-                            variant="ghost"
+                            variant={hasReminder(event.id) ? "default" : "outline"}
                             size="icon"
-                            asChild
+                            onClick={() => toggleReminder({
+                              id: event.id,
+                              title: event.title,
+                              startTime: event.start.toISOString(),
+                              departure: event.departure,
+                              arrival: event.arrival,
+                              type: event.type,
+                              url: event.url
+                            })}
+                            className={hasReminder(event.id) ? "bg-amber-500 hover:bg-amber-600" : ""}
+                            title={hasReminder(event.id) ? "Remove reminder" : "Set reminder"}
                           >
-                            <a href={event.url} target="_blank" rel="noopener noreferrer">
-                              <ExternalLink size={18} />
-                            </a>
+                            {hasReminder(event.id) ? <Bell size={18} /> : <BellOff size={18} />}
                           </Button>
-                        )}
+                          {event.url && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              asChild
+                            >
+                              <a href={event.url} target="_blank" rel="noopener noreferrer">
+                                <ExternalLink size={18} />
+                              </a>
+                            </Button>
+                          )}
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -456,7 +511,7 @@ export default function CalendarPage() {
                       onClick={() => setSelectedDate(event.start)}
                     >
                       <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-2 min-w-0">
+                        <div className="flex items-center gap-2 min-w-0 flex-1" onClick={() => setSelectedDate(event.start)}>
                           <Badge 
                             variant="outline" 
                             className={`shrink-0 ${event.type === 'tmp' 
@@ -466,10 +521,38 @@ export default function CalendarPage() {
                           >
                             {event.type.toUpperCase()}
                           </Badge>
+                          {hasReminder(event.id) && (
+                            <Bell size={14} className="text-amber-400 shrink-0" />
+                          )}
                           <span className="font-medium truncate">{event.title}</span>
                         </div>
-                        <div className="text-sm text-muted-foreground shrink-0">
-                          {format(event.start, 'MMM d, h:mm a')}
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="text-sm text-muted-foreground">
+                            {format(event.start, 'MMM d, h:mm a')}
+                          </span>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleReminder({
+                                id: event.id,
+                                title: event.title,
+                                startTime: event.start.toISOString(),
+                                departure: event.departure,
+                                arrival: event.arrival,
+                                type: event.type,
+                                url: event.url
+                              });
+                            }}
+                          >
+                            {hasReminder(event.id) ? (
+                              <Bell size={14} className="text-amber-400" />
+                            ) : (
+                              <BellOff size={14} className="text-muted-foreground" />
+                            )}
+                          </Button>
                         </div>
                       </div>
                     </div>
@@ -479,6 +562,24 @@ export default function CalendarPage() {
             </GlassCard>
           </div>
         </div>
+
+        {/* Reminder Info */}
+        <GlassCard className="p-6 border-amber-500/20 bg-amber-500/5">
+          <div className="flex flex-col md:flex-row items-center gap-4">
+            <div className="flex-shrink-0 w-16 h-16 rounded-full bg-amber-500/20 flex items-center justify-center">
+              <Bell size={32} className="text-amber-400" />
+            </div>
+            <div className="flex-1 text-center md:text-left">
+              <h3 className="font-semibold text-lg">Event Reminders</h3>
+              <p className="text-muted-foreground mt-1">
+                Click the bell icon on any event to set a reminder. You'll be notified 30, 15, 5, and 1 minute before the event starts.
+                {reminderEvents.length > 0 && (
+                  <span className="text-amber-400 font-medium"> You have {reminderEvents.length} reminder{reminderEvents.length > 1 ? 's' : ''} set.</span>
+                )}
+              </p>
+            </div>
+          </div>
+        </GlassCard>
 
         {/* Download Info */}
         <GlassCard className="p-6">
