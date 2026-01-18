@@ -3,15 +3,13 @@ import { AppLayout } from '@/components/layout/AppLayout';
 import { GlassCard } from '@/components/layout/GlassCard';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Calendar as CalendarComponent } from '@/components/ui/calendar';
-import { Switch } from '@/components/ui/switch';
-import { Label } from '@/components/ui/label';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useTruckersMP, TMPEvent } from '@/hooks/useTruckersMP';
 import { useEventReminders, CalendarEvent as ReminderEvent } from '@/hooks/useEventReminders';
 import { useUIStore } from '@/stores/appStore';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { format, parseISO, isSameDay } from 'date-fns';
+import { format, parseISO, isSameDay, startOfMonth, endOfMonth, eachDayOfInterval, addMonths, subMonths, getDay, isToday, isSameMonth } from 'date-fns';
 import {
   Calendar,
   Download,
@@ -26,8 +24,10 @@ import {
   ExternalLink,
   Bell,
   BellOff,
-  BellRing
+  X,
+  Gamepad2
 } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 interface VTCEvent {
   id: string;
@@ -43,6 +43,7 @@ interface VTCEvent {
   meetup_time: string | null;
   server_name: string | null;
   status: string;
+  banner_url: string | null;
 }
 
 interface CalendarEvent {
@@ -57,6 +58,8 @@ interface CalendarEvent {
   description?: string;
   url?: string;
   attendees?: number;
+  server?: string;
+  banner?: string;
 }
 
 export default function CalendarPage() {
@@ -65,11 +68,11 @@ export default function CalendarPage() {
   const notificationsEnabled = useUIStore((s) => s.notificationsEnabled);
   const setNotificationsEnabled = useUIStore((s) => s.setNotificationsEnabled);
   
-  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [currentMonth, setCurrentMonth] = useState<Date>(new Date());
   const [tmpEvents, setTmpEvents] = useState<TMPEvent[]>([]);
   const [vtcEvents, setVtcEvents] = useState<VTCEvent[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
 
   // Fetch all events
   useEffect(() => {
@@ -128,11 +131,13 @@ export default function CalendarPage() {
         start: parseISO(event.startAt),
         type: 'tmp',
         game: event.game,
-        departure: `${event.departure.city}, ${event.departure.location}`,
-        arrival: `${event.arrive.city}, ${event.arrive.location}`,
+        departure: `${event.departure.city}${event.departure.location ? `, ${event.departure.location}` : ''}`,
+        arrival: `${event.arrive.city}${event.arrive.location ? `, ${event.arrive.location}` : ''}`,
         description: event.description,
         url: `https://truckersmp.com/events/${event.id}`,
-        attendees: event.attendances.confirmed
+        attendees: event.attendances.confirmed,
+        server: event.server?.name,
+        banner: event.banner
       });
     });
 
@@ -146,22 +151,37 @@ export default function CalendarPage() {
         game: event.game,
         departure: `${event.departure_city}${event.departure_location ? `, ${event.departure_location}` : ''}`,
         arrival: `${event.arrival_city}${event.arrival_location ? `, ${event.arrival_location}` : ''}`,
-        description: event.description || undefined
+        description: event.description || undefined,
+        server: event.server_name || undefined,
+        banner: event.banner_url || undefined
       });
     });
 
     return events.sort((a, b) => a.start.getTime() - b.start.getTime());
   }, [tmpEvents, vtcEvents]);
 
-  // Get events for selected date
-  const selectedDateEvents = useMemo(() => {
-    return calendarEvents.filter((event) => isSameDay(event.start, selectedDate));
-  }, [calendarEvents, selectedDate]);
-
-  // Get dates with events for calendar highlighting
-  const eventDates = useMemo(() => {
-    return calendarEvents.map((event) => event.start);
+  // Get events for a specific day
+  const getEventsForDay = useCallback((day: Date) => {
+    return calendarEvents.filter((event) => isSameDay(event.start, day));
   }, [calendarEvents]);
+
+  // Generate calendar days
+  const calendarDays = useMemo(() => {
+    const monthStart = startOfMonth(currentMonth);
+    const monthEnd = endOfMonth(currentMonth);
+    const days = eachDayOfInterval({ start: monthStart, end: monthEnd });
+    
+    // Add padding days at the start
+    const startPadding = getDay(monthStart);
+    const paddingDays: (Date | null)[] = Array(startPadding).fill(null);
+    
+    // Add padding days at the end to complete the grid
+    const totalCells = Math.ceil((days.length + startPadding) / 7) * 7;
+    const endPadding = totalCells - days.length - startPadding;
+    const endPaddingDays: (Date | null)[] = Array(endPadding).fill(null);
+    
+    return [...paddingDays, ...days, ...endPaddingDays];
+  }, [currentMonth]);
 
   // Generate ICS content for calendar download
   const generateICSContent = useCallback(() => {
@@ -190,7 +210,7 @@ export default function CalendarPage() {
     calendarEvents.forEach((event) => {
       const uid = `${event.id}@auravtc.hub`;
       const startDate = formatICSDate(event.start);
-      const endDate = formatICSDate(new Date(event.start.getTime() + 2 * 60 * 60 * 1000)); // 2 hour duration
+      const endDate = formatICSDate(new Date(event.start.getTime() + 2 * 60 * 60 * 1000));
       
       const eventLines = [
         'BEGIN:VEVENT',
@@ -237,21 +257,39 @@ export default function CalendarPage() {
     toast.success('Calendar downloaded! Import it to Apple Calendar, Google Calendar, or Outlook.');
   }, [calendarEvents, generateICSContent]);
 
-  const getGameBadge = (game: string) => {
+  const getGameLabel = (game: string) => {
     if (game.toLowerCase().includes('ets') || game.toLowerCase().includes('euro')) {
-      return <Badge variant="outline" className="bg-blue-500/20 text-blue-400 border-blue-500/40 text-xs">ETS2</Badge>;
+      return 'ETS2';
     }
-    return <Badge variant="outline" className="bg-orange-500/20 text-orange-400 border-orange-500/40 text-xs">ATS</Badge>;
+    return 'ATS';
   };
 
   const navigateMonth = (direction: 'prev' | 'next') => {
-    const newMonth = new Date(currentMonth);
     if (direction === 'prev') {
-      newMonth.setMonth(newMonth.getMonth() - 1);
+      setCurrentMonth(subMonths(currentMonth, 1));
     } else {
-      newMonth.setMonth(newMonth.getMonth() + 1);
+      setCurrentMonth(addMonths(currentMonth, 1));
     }
-    setCurrentMonth(newMonth);
+  };
+
+  const goToToday = () => {
+    setCurrentMonth(new Date());
+  };
+
+  const handleEventClick = (event: CalendarEvent) => {
+    setSelectedEvent(event);
+  };
+
+  const handleToggleReminder = (event: CalendarEvent) => {
+    toggleReminder({
+      id: event.id,
+      title: event.title,
+      startTime: event.start.toISOString(),
+      departure: event.departure,
+      arrival: event.arrival,
+      type: event.type,
+      url: event.url
+    });
   };
 
   return (
@@ -262,15 +300,15 @@ export default function CalendarPage() {
           <div>
             <h1 className="text-3xl font-bold gradient-text">Event Calendar</h1>
             <p className="text-muted-foreground mt-1">
-              View all TruckersMP and VTC events in one place
+              View all TruckersMP and VTC events
             </p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button
               variant="outline"
               onClick={fetchAllEvents}
               disabled={loading || tmpLoading}
-              className="gap-2 rounded-full"
+              className="gap-2"
             >
               <RefreshCw size={18} className={loading || tmpLoading ? 'animate-spin' : ''} />
               Refresh
@@ -278,16 +316,16 @@ export default function CalendarPage() {
             <Button
               onClick={handleDownloadCalendar}
               disabled={calendarEvents.length === 0}
-              className="gap-2 rounded-full neon-glow"
+              className="gap-2 neon-glow"
             >
               <Download size={18} />
-              Download Calendar
+              Download .ics
             </Button>
           </div>
         </div>
 
-        {/* Stats + Notification Settings */}
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+        {/* Stats */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <GlassCard className="p-4 text-center">
             <div className="text-2xl font-bold text-primary">{calendarEvents.length}</div>
             <div className="text-sm text-muted-foreground">Total Events</div>
@@ -304,279 +342,135 @@ export default function CalendarPage() {
             <div className="text-2xl font-bold text-amber-400">{reminderEvents.length}</div>
             <div className="text-sm text-muted-foreground">Reminders Set</div>
           </GlassCard>
-          <GlassCard className="p-4">
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <BellRing size={18} className={notificationsEnabled ? 'text-primary' : 'text-muted-foreground'} />
-                <Label htmlFor="notifications" className="text-sm cursor-pointer">
-                  Notifications
-                </Label>
-              </div>
-              <Switch
-                id="notifications"
-                checked={notificationsEnabled}
-                onCheckedChange={(checked) => {
-                  setNotificationsEnabled(checked);
-                  if (checked) {
-                    requestPermission();
-                    toast.success('Notifications enabled');
-                  } else {
-                    toast.info('Notifications disabled');
-                  }
-                }}
-              />
-            </div>
-            <div className="text-xs text-muted-foreground mt-1">
-              {permission === 'granted' ? '✓ Browser allowed' : permission === 'denied' ? '✗ Browser blocked' : 'Click to enable'}
-            </div>
-          </GlassCard>
         </div>
 
-        <div className="grid lg:grid-cols-3 gap-6">
-          {/* Calendar */}
-          <GlassCard className="p-4 lg:col-span-1">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="font-semibold flex items-center gap-2">
-                <Calendar size={18} className="text-primary" />
+        {/* Full Calendar */}
+        <GlassCard className="p-4 md:p-6 overflow-hidden">
+          {/* Calendar Header */}
+          <div className="flex items-center justify-between mb-6">
+            <Button
+              variant="outline"
+              onClick={() => navigateMonth('prev')}
+              className="gap-2"
+            >
+              <ChevronLeft size={18} />
+              <span className="hidden sm:inline">Previous</span>
+            </Button>
+            
+            <div className="flex items-center gap-4">
+              <h2 className="text-xl md:text-2xl font-bold text-primary">
                 {format(currentMonth, 'MMMM yyyy')}
               </h2>
-              <div className="flex gap-1">
-                <Button variant="ghost" size="icon" onClick={() => navigateMonth('prev')}>
-                  <ChevronLeft size={18} />
-                </Button>
-                <Button variant="ghost" size="icon" onClick={() => navigateMonth('next')}>
-                  <ChevronRight size={18} />
-                </Button>
-              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={goToToday}
+                className="text-muted-foreground hover:text-foreground"
+              >
+                Today
+              </Button>
             </div>
-            <CalendarComponent
-              mode="single"
-              selected={selectedDate}
-              onSelect={(date) => date && setSelectedDate(date)}
-              month={currentMonth}
-              onMonthChange={setCurrentMonth}
-              modifiers={{
-                hasEvent: eventDates
-              }}
-              modifiersStyles={{
-                hasEvent: {
-                  backgroundColor: 'hsl(var(--primary) / 0.2)',
-                  borderRadius: '50%',
-                  fontWeight: 'bold'
-                }
-              }}
-              className="rounded-md"
-            />
-            <div className="mt-4 flex flex-wrap gap-2 text-xs">
-              <div className="flex items-center gap-1">
-                <div className="w-3 h-3 rounded-full bg-primary/30" />
-                <span className="text-muted-foreground">Has Events</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <div className="w-3 h-3 rounded-full bg-blue-500/50" />
-                <span className="text-muted-foreground">TMP</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <div className="w-3 h-3 rounded-full bg-primary/50" />
-                <span className="text-muted-foreground">VTC</span>
-              </div>
-            </div>
-          </GlassCard>
-
-          {/* Events List */}
-          <div className="lg:col-span-2 space-y-4">
-            <GlassCard className="p-4">
-              <h2 className="font-semibold mb-4 flex items-center gap-2">
-                <Clock size={18} className="text-primary" />
-                Events on {format(selectedDate, 'EEEE, MMMM d, yyyy')}
-              </h2>
-              
-              {loading ? (
-                <div className="flex items-center justify-center py-8">
-                  <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-                </div>
-              ) : selectedDateEvents.length === 0 ? (
-                <div className="text-center py-8">
-                  <Calendar size={48} className="mx-auto text-muted-foreground mb-4" />
-                  <p className="text-muted-foreground">No events scheduled for this date</p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {selectedDateEvents.map((event) => (
-                    <div
-                      key={event.id}
-                      className={`p-4 rounded-lg border transition-all hover:border-primary/50 ${
-                        event.type === 'tmp' 
-                          ? 'bg-blue-500/5 border-blue-500/20' 
-                          : 'bg-primary/5 border-primary/20'
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-2">
-                            <Badge 
-                              variant="outline" 
-                              className={event.type === 'tmp' 
-                                ? 'bg-blue-500/20 text-blue-400 border-blue-500/40' 
-                                : 'bg-primary/20 text-primary border-primary/40'
-                              }
-                            >
-                              {event.type === 'tmp' ? (
-                                <><Globe size={12} className="mr-1" /> TMP</>
-                              ) : (
-                                <><Truck size={12} className="mr-1" /> VTC</>
-                              )}
-                            </Badge>
-                            {getGameBadge(event.game)}
-                          </div>
-                          <h3 className="font-semibold text-lg truncate">{event.title}</h3>
-                          <div className="mt-2 space-y-1 text-sm text-muted-foreground">
-                            <div className="flex items-center gap-2">
-                              <Clock size={14} />
-                              {format(event.start, 'h:mm a')} UTC
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <MapPin size={14} />
-                              <span className="truncate">{event.departure} → {event.arrival}</span>
-                            </div>
-                            {event.attendees !== undefined && (
-                              <div className="flex items-center gap-2">
-                                <Users size={14} />
-                                {event.attendees} attending
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                        <div className="flex flex-col gap-2">
-                          <Button
-                            variant={hasReminder(event.id) ? "default" : "outline"}
-                            size="icon"
-                            onClick={() => toggleReminder({
-                              id: event.id,
-                              title: event.title,
-                              startTime: event.start.toISOString(),
-                              departure: event.departure,
-                              arrival: event.arrival,
-                              type: event.type,
-                              url: event.url
-                            })}
-                            className={hasReminder(event.id) ? "bg-amber-500 hover:bg-amber-600" : ""}
-                            title={hasReminder(event.id) ? "Remove reminder" : "Set reminder"}
-                          >
-                            {hasReminder(event.id) ? <Bell size={18} /> : <BellOff size={18} />}
-                          </Button>
-                          {event.url && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              asChild
-                            >
-                              <a href={event.url} target="_blank" rel="noopener noreferrer">
-                                <ExternalLink size={18} />
-                              </a>
-                            </Button>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </GlassCard>
-
-            {/* All Upcoming Events */}
-            <GlassCard className="p-4">
-              <h2 className="font-semibold mb-4 flex items-center gap-2">
-                <Calendar size={18} className="text-primary" />
-                All Upcoming Events ({calendarEvents.length})
-              </h2>
-              
-              {calendarEvents.length === 0 ? (
-                <div className="text-center py-8">
-                  <Calendar size={48} className="mx-auto text-muted-foreground mb-4" />
-                  <p className="text-muted-foreground">No upcoming events</p>
-                </div>
-              ) : (
-                <div className="space-y-2 max-h-[400px] overflow-y-auto pr-2">
-                  {calendarEvents.map((event) => (
-                    <div
-                      key={event.id}
-                      className={`p-3 rounded-lg border cursor-pointer transition-all hover:border-primary/50 ${
-                        isSameDay(event.start, selectedDate) ? 'ring-2 ring-primary/50' : ''
-                      } ${
-                        event.type === 'tmp' 
-                          ? 'bg-blue-500/5 border-blue-500/20' 
-                          : 'bg-primary/5 border-primary/20'
-                      }`}
-                      onClick={() => setSelectedDate(event.start)}
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-2 min-w-0 flex-1" onClick={() => setSelectedDate(event.start)}>
-                          <Badge 
-                            variant="outline" 
-                            className={`shrink-0 ${event.type === 'tmp' 
-                              ? 'bg-blue-500/20 text-blue-400 border-blue-500/40' 
-                              : 'bg-primary/20 text-primary border-primary/40'
-                            }`}
-                          >
-                            {event.type.toUpperCase()}
-                          </Badge>
-                          {hasReminder(event.id) && (
-                            <Bell size={14} className="text-amber-400 shrink-0" />
-                          )}
-                          <span className="font-medium truncate">{event.title}</span>
-                        </div>
-                        <div className="flex items-center gap-2 shrink-0">
-                          <span className="text-sm text-muted-foreground">
-                            {format(event.start, 'MMM d, h:mm a')}
-                          </span>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              toggleReminder({
-                                id: event.id,
-                                title: event.title,
-                                startTime: event.start.toISOString(),
-                                departure: event.departure,
-                                arrival: event.arrival,
-                                type: event.type,
-                                url: event.url
-                              });
-                            }}
-                          >
-                            {hasReminder(event.id) ? (
-                              <Bell size={14} className="text-amber-400" />
-                            ) : (
-                              <BellOff size={14} className="text-muted-foreground" />
-                            )}
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </GlassCard>
+            
+            <Button
+              variant="outline"
+              onClick={() => navigateMonth('next')}
+              className="gap-2"
+            >
+              <span className="hidden sm:inline">Next</span>
+              <ChevronRight size={18} />
+            </Button>
           </div>
-        </div>
 
-        {/* Reminder Info */}
-        <GlassCard className="p-6 border-amber-500/20 bg-amber-500/5">
-          <div className="flex flex-col md:flex-row items-center gap-4">
-            <div className="flex-shrink-0 w-16 h-16 rounded-full bg-amber-500/20 flex items-center justify-center">
-              <Bell size={32} className="text-amber-400" />
+          {/* Day Headers */}
+          <div className="grid grid-cols-7 border-b border-border/50 mb-2">
+            {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
+              <div
+                key={day}
+                className="py-3 text-center text-sm font-semibold text-primary"
+              >
+                {day}
+              </div>
+            ))}
+          </div>
+
+          {/* Calendar Grid */}
+          {loading ? (
+            <div className="flex items-center justify-center py-20">
+              <div className="w-10 h-10 border-2 border-primary border-t-transparent rounded-full animate-spin" />
             </div>
-            <div className="flex-1 text-center md:text-left">
-              <h3 className="font-semibold text-lg">Event Reminders</h3>
-              <p className="text-muted-foreground mt-1">
-                Click the bell icon on any event to set a reminder. You'll be notified 30, 15, 5, and 1 minute before the event starts.
-                {reminderEvents.length > 0 && (
-                  <span className="text-amber-400 font-medium"> You have {reminderEvents.length} reminder{reminderEvents.length > 1 ? 's' : ''} set.</span>
-                )}
-              </p>
+          ) : (
+            <div className="grid grid-cols-7 border-l border-border/30">
+              {calendarDays.map((day, index) => {
+                const dayEvents = day ? getEventsForDay(day) : [];
+                const isCurrentMonth = day ? isSameMonth(day, currentMonth) : false;
+                const isTodayDate = day ? isToday(day) : false;
+                
+                return (
+                  <div
+                    key={index}
+                    className={cn(
+                      "min-h-[100px] md:min-h-[120px] border-r border-b border-border/30 p-1 md:p-2 transition-colors",
+                      !isCurrentMonth && "bg-muted/20",
+                      isTodayDate && "bg-primary/10 ring-2 ring-primary/50 ring-inset"
+                    )}
+                  >
+                    {day && (
+                      <>
+                        <div className={cn(
+                          "text-right text-sm font-medium mb-1",
+                          !isCurrentMonth && "text-muted-foreground/50",
+                          isTodayDate && "text-primary font-bold"
+                        )}>
+                          {format(day, 'd')}
+                        </div>
+                        <div className="space-y-1 overflow-hidden">
+                          {dayEvents.slice(0, 3).map((event) => (
+                            <button
+                              key={event.id}
+                              onClick={() => handleEventClick(event)}
+                              className={cn(
+                                "w-full text-left text-[10px] md:text-xs px-1.5 py-1 rounded truncate transition-all hover:opacity-80 cursor-pointer",
+                                event.type === 'tmp'
+                                  ? "bg-blue-500/30 text-blue-300 hover:bg-blue-500/50"
+                                  : "bg-primary/30 text-primary hover:bg-primary/50"
+                              )}
+                              title={event.title}
+                            >
+                              <span className="font-medium">{format(event.start, 'HH:mm')}</span>
+                              <span className="hidden md:inline"> - {event.title}</span>
+                              <span className="md:hidden"> {event.title.slice(0, 10)}...</span>
+                            </button>
+                          ))}
+                          {dayEvents.length > 3 && (
+                            <button
+                              onClick={() => day && handleEventClick(dayEvents[0])}
+                              className="w-full text-[10px] md:text-xs text-muted-foreground hover:text-foreground text-center py-0.5"
+                            >
+                              +{dayEvents.length - 3} more
+                            </button>
+                          )}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Legend */}
+          <div className="mt-4 flex flex-wrap items-center justify-center gap-4 text-sm">
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 rounded bg-primary/30" />
+              <span className="text-muted-foreground">VTC Events</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 rounded bg-blue-500/30" />
+              <span className="text-muted-foreground">TMP Events</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 rounded ring-2 ring-primary/50" />
+              <span className="text-muted-foreground">Today</span>
             </div>
           </div>
         </GlassCard>
@@ -597,7 +491,7 @@ export default function CalendarPage() {
             <Button
               onClick={handleDownloadCalendar}
               disabled={calendarEvents.length === 0}
-              className="gap-2 rounded-full neon-glow shrink-0"
+              className="gap-2 neon-glow shrink-0"
             >
               <Download size={18} />
               Download .ics File
@@ -605,6 +499,132 @@ export default function CalendarPage() {
           </div>
         </GlassCard>
       </div>
+
+      {/* Event Details Dialog */}
+      <Dialog open={!!selectedEvent} onOpenChange={() => setSelectedEvent(null)}>
+        <DialogContent className="max-w-lg">
+          {selectedEvent && (
+            <>
+              <DialogHeader>
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Badge 
+                        variant="outline" 
+                        className={selectedEvent.type === 'tmp' 
+                          ? 'bg-blue-500/20 text-blue-400 border-blue-500/40' 
+                          : 'bg-primary/20 text-primary border-primary/40'
+                        }
+                      >
+                        {selectedEvent.type === 'tmp' ? (
+                          <><Globe size={12} className="mr-1" /> TruckersMP</>
+                        ) : (
+                          <><Truck size={12} className="mr-1" /> VTC Event</>
+                        )}
+                      </Badge>
+                      <Badge variant="outline" className="bg-secondary/50">
+                        <Gamepad2 size={12} className="mr-1" />
+                        {getGameLabel(selectedEvent.game)}
+                      </Badge>
+                    </div>
+                    <DialogTitle className="text-xl">{selectedEvent.title}</DialogTitle>
+                  </div>
+                </div>
+              </DialogHeader>
+
+              {selectedEvent.banner && (
+                <div className="w-full h-40 rounded-lg overflow-hidden bg-muted">
+                  <img 
+                    src={selectedEvent.banner} 
+                    alt={selectedEvent.title}
+                    className="w-full h-full object-cover"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).style.display = 'none';
+                    }}
+                  />
+                </div>
+              )}
+
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 gap-3">
+                  <div className="flex items-center gap-3 text-sm">
+                    <Clock size={18} className="text-primary shrink-0" />
+                    <div>
+                      <div className="font-medium">{format(selectedEvent.start, 'EEEE, MMMM d, yyyy')}</div>
+                      <div className="text-muted-foreground">{format(selectedEvent.start, 'HH:mm')} UTC</div>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-start gap-3 text-sm">
+                    <MapPin size={18} className="text-primary shrink-0 mt-0.5" />
+                    <div>
+                      <div className="font-medium">Route</div>
+                      <div className="text-muted-foreground">{selectedEvent.departure}</div>
+                      <div className="text-primary">↓</div>
+                      <div className="text-muted-foreground">{selectedEvent.arrival}</div>
+                    </div>
+                  </div>
+
+                  {selectedEvent.server && (
+                    <div className="flex items-center gap-3 text-sm">
+                      <Globe size={18} className="text-primary shrink-0" />
+                      <div>
+                        <div className="font-medium">Server</div>
+                        <div className="text-muted-foreground">{selectedEvent.server}</div>
+                      </div>
+                    </div>
+                  )}
+
+                  {selectedEvent.attendees !== undefined && (
+                    <div className="flex items-center gap-3 text-sm">
+                      <Users size={18} className="text-primary shrink-0" />
+                      <div>
+                        <div className="font-medium">Attendees</div>
+                        <div className="text-muted-foreground">{selectedEvent.attendees} confirmed</div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {selectedEvent.description && (
+                  <div className="pt-3 border-t border-border/50">
+                    <div className="text-sm font-medium mb-2">Description</div>
+                    <p className="text-sm text-muted-foreground whitespace-pre-wrap">
+                      {selectedEvent.description}
+                    </p>
+                  </div>
+                )}
+
+                <div className="flex gap-2 pt-2">
+                  <Button
+                    variant={hasReminder(selectedEvent.id) ? "default" : "outline"}
+                    onClick={() => handleToggleReminder(selectedEvent)}
+                    className={cn(
+                      "flex-1 gap-2",
+                      hasReminder(selectedEvent.id) && "bg-amber-500 hover:bg-amber-600"
+                    )}
+                  >
+                    {hasReminder(selectedEvent.id) ? (
+                      <><Bell size={18} /> Reminder Set</>
+                    ) : (
+                      <><BellOff size={18} /> Set Reminder</>
+                    )}
+                  </Button>
+                  
+                  {selectedEvent.url && (
+                    <Button variant="outline" asChild className="gap-2">
+                      <a href={selectedEvent.url} target="_blank" rel="noopener noreferrer">
+                        <ExternalLink size={18} />
+                        View Event
+                      </a>
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 }
