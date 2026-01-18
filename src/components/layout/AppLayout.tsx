@@ -19,6 +19,7 @@ import {
   ChevronRight,
   Megaphone,
   Calendar,
+  CalendarDays,
   Activity
 } from 'lucide-react';
 
@@ -30,6 +31,7 @@ const navItems = [
   { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard', roles: ['all'] },
   { icon: BarChart3, label: 'Fleet Overview', path: '/fleet', roles: ['all'] },
   { icon: Calendar, label: 'Events', path: '/events', roles: ['all'] },
+  { icon: CalendarDays, label: 'Calendar', path: '/calendar', roles: ['all'] },
   { icon: Activity, label: 'Telemetry', path: '/telemetry', roles: ['all'] },
   { icon: Truck, label: 'My Stats', path: '/my-stats', roles: ['all'] },
   { icon: PlusCircle, label: 'Log Job', path: '/log-job', roles: ['all'] },
