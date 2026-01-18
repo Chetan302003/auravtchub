@@ -19,6 +19,7 @@ import DeveloperPanel from "./pages/DeveloperPanel";
 import Announcements from "./pages/Announcements";
 import Events from "./pages/Events";
 import Telemetry from "./pages/Telemetry";
+import CalendarPage from "./pages/Calendar";
 
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
 
@@ -78,6 +79,7 @@ function AppRoutes() {
       <Route path="/logs" element={<ProtectedRoute><SystemLogs /></ProtectedRoute>} />
       <Route path="/announcements" element={<ProtectedRoute><Announcements /></ProtectedRoute>} />
       <Route path="/events" element={<ProtectedRoute><Events /></ProtectedRoute>} />
+      <Route path="/calendar" element={<ProtectedRoute><CalendarPage /></ProtectedRoute>} />
       <Route path="/telemetry" element={<ProtectedRoute><Telemetry /></ProtectedRoute>} />
       <Route path="/developer" element={<ProtectedRoute><DeveloperPanel /></ProtectedRoute>} />
       <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
